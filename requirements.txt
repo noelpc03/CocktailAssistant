@@ -1,0 +1,14 @@
+# Web crawling & scraping
+requests>=2.25.0
+beautifulsoup4>=4.9.3
+
+# Embeddings & ML
+transformers>=4.5.0
+sentence-transformers>=2.0.0
+torch>=2.0.0+cpu
+faiss-cpu>=1.7.0
+numpy>=1.19.5
+
+# Utilities
+tqdm>=4.60.0
+python-dotenv>=0.17.1
