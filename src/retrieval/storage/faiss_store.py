@@ -72,7 +72,7 @@ class FAISSStorage:
         
         # Get matching documents
         results = []
-        for (dist, idx) in enumerate(zip(distances[0], indices[0])):
+        for (dist, idx) in zip(distances[0], indices[0]):
             if idx < len(self.documents) and idx >= 0:
                 doc = self.documents[idx].copy()
                 doc["score"] = float(dist)

@@ -12,3 +12,6 @@ numpy>=1.19.5
 # Utilities
 tqdm>=4.60.0
 python-dotenv>=0.17.1
+
+# LLM Integration
+google-generativeai>=0.3.0 

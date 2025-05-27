@@ -6,9 +6,9 @@ import logging
 import json
 from typing import List, Dict, Any
 
-from crawler.web_crawler import scrape_urls, get_all_bartender_content
-from embeddings.vectorizer import vectorize_documents
-from storage.faiss_store import store_embeddings
+from src.retrieval.crawler.web_crawler import scrape_urls, get_all_bartender_content
+from src.retrieval.embeddings.vectorizer import vectorize_documents
+from src.retrieval.storage.faiss_store import store_embeddings
 
 # Configure logging
 logging.basicConfig(
@@ -27,7 +27,6 @@ DEFAULT_URLS = [
     "https://www.diffordsguide.com/cocktails/recipe/42/martini",
     "https://www.thespruceeats.com/classic-cocktails-everyone-should-know-760778",
     "https://en.wikipedia.org/wiki/Bartender",
-    "https://www.masterclass.com/articles/essential-bar-tools"
 ]
 
 # Default paths

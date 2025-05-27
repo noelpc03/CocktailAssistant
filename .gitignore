@@ -2,3 +2,5 @@
 data
 __pycache__
 bartender_retrieval.log
+tokenGemini.txt
+bartender_search.log
