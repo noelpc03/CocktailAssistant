@@ -4,3 +4,6 @@ __pycache__
 bartender_retrieval.log
 tokenGemini.txt
 bartender_search.log
+rebuild_index.py
+bartender_agent_system.log
+crawl_debug_output.log

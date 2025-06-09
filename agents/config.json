@@ -1,0 +1,33 @@
+{
+  "crawler_agent": {
+    "default_urls": [
+      "https://www.liquor.com/recipes/margarita/",
+      "https://www.diffordsguide.com/cocktails/recipe/42/martini",
+      "https://www.thespruceeats.com/classic-cocktails-everyone-should-know-760778",
+      "https://en.wikipedia.org/wiki/Bartender"
+    ]
+  },
+  "vectorizer_agent": {
+    "model_name": "sentence-transformers/all-mpnet-base-v2",
+    "chunk_size": 512,
+    "chunk_overlap": 50
+  },
+  "retrieval_agent": {
+    "max_results": 20,
+    "similarity_threshold": 0.6
+  },
+  "search_agent": {
+    "max_results": 20,
+    "show_scores": true
+  },
+  "generation_agent": {
+    "model": "gemini-1.5-flash",
+    "temperature": 0.4,
+    "top_k": 32,
+    "top_p": 0.95,
+    "max_output_tokens": 2048
+  },
+  "coordinator_agent": {
+    "timeout": 30
+  }
+}
