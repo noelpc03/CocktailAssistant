@@ -32,7 +32,7 @@ DEFAULT_CONFIG = {
         "show_scores": True
     },
     "generation_agent": {
-        "model": "gemini-1.5-flash",
+        "model": "mixtral-8x7b",
         "temperature": 0.4,
         "top_k": 32,
         "top_p": 0.95,

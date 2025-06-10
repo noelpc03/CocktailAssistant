@@ -4,7 +4,9 @@ Generation agent responsible for generating responses using an LLM.
 import os
 import logging
 from typing import Dict, Any, List
-import google.generativeai as genai
+import requests
+import json
+from huggingface_hub import InferenceClient
 
 from agents.common.agent_interface import Agent
 from agents.common.config_manager import ConfigManager
@@ -26,7 +28,7 @@ class GenerationAgent(Agent):
         super().__init__(agent_id, config)
         self.config = config or ConfigManager().get_agent_config("generation_agent")
         self.data_store = DataStore()
-        self.model_name = self.config.get("model", "gemini-1.5-flash")
+        self.model_name = self.config.get("model", "mixtral-8x7b")
         self.temperature = self.config.get("temperature", 0.4)
         self.top_k = self.config.get("top_k", 32)
         self.top_p = self.config.get("top_p", 0.95)
@@ -73,7 +75,7 @@ class GenerationAgent(Agent):
             if not api_key_path and not self.api_key:
                 # Look for token file in default location
                 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                api_key_path = os.path.join(project_root, "tokenGemini.txt")
+                api_key_path = os.path.join(project_root, "tokenHuggingFace.txt")
             
             # Generate response
             response = await self.generate_response(query, search_results, api_key_path)
@@ -117,7 +119,7 @@ class GenerationAgent(Agent):
     
     def _initialize_model(self, api_key_path: str = None) -> bool:
         """
-        Initialize the Gemini model.
+        Initialize the Mixtral model connection.
         
         Args:
             api_key_path: Path to API key file
@@ -134,28 +136,15 @@ class GenerationAgent(Agent):
                 logger.error("No API key available")
                 return False
                 
-            # Configure Gemini API with location settings
-            location_settings = {
-                "GOOGLE_APPLICATION_LOCATION_OVERRIDE": "us", # Ensure US region is used
-            }
+            # For Mixtral, we don't need to initialize a model object here
+            # We'll just verify the API key is available
+            self.model = True
             
-            # Set environment variables for location
-            import os
-            for key, value in location_settings.items():
-                os.environ[key] = value
-                
-            # Configure Gemini API
-            genai.configure(api_key=self.api_key)
-            
-            # Get the model with minimal configuration
-            # (full configuration will be provided during generation)
-            self.model = genai.GenerativeModel(model_name=self.model_name)
-            
-            logger.info(f"Model {self.model_name} initialized successfully")
+            logger.info(f"Model {self.model_name} connection initialized successfully")
             return True
             
         except Exception as e:
-            logger.error(f"Error initializing model: {e}")
+            logger.error(f"Error initializing model connection: {e}")
             return False
     
     def _build_prompt(self, query: str, search_results: List[Dict[str, Any]]) -> str:
@@ -175,19 +164,19 @@ class GenerationAgent(Agent):
         CHARS_PER_TOKEN = 4
         
         # Estimar tokens máximos para el modelo (para dejar espacio para la respuesta)
-        # Gemini-1.5-flash tiene un contexto total de 128K tokens
-        # Reservamos ~6K tokens para la respuesta y estructura del prompt
-        MAX_CONTEXT_TOKENS = 122000  
+        # Mixtral-8x7b tiene un contexto total de aproximadamente 32K tokens
+        # Reservamos ~2K tokens para la respuesta y estructura del prompt
+        MAX_CONTEXT_TOKENS = 30000  
         
-        # Estructura básica del prompt
-        base_prompt = f"""Como asistente experto en bebidas y coctelería, responde a la siguiente consulta utilizando la información proporcionada.
+        # Estructura básica del prompt con formato específico para Mixtral Instruct
+        base_prompt = f"""<s>[INST] Como asistente experto en bebidas y coctelería, responde a la siguiente consulta utilizando la información proporcionada.
 
 Consulta: {query}
 
 Información de referencia:
 """
         
-        final_part = "\nBasándote en la información anterior, por favor responde a la consulta de manera concisa y profesional."
+        final_part = "\nBasándote en la información anterior, por favor responde a la consulta de manera concisa y profesional. No incluyas referencias o menciones a las fuentes específicas en tu respuesta. [/INST]"
         
         # Estimar tokens ya utilizados
         base_tokens = (len(base_prompt) + len(final_part)) // CHARS_PER_TOKEN
@@ -254,45 +243,41 @@ Información de referencia:
             # Build the prompt
             prompt = self._build_prompt(query, search_results)
             
-            # Generate response with safety settings for location
-            generation_config = {
-                "temperature": self.temperature,
-                "top_p": self.top_p,
-                "top_k": self.top_k,
-                "max_output_tokens": self.max_output_tokens,
-            }
-            
-            safety_settings = [
-                {"category": "HARM_CATEGORY_DANGEROUS", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            ]
+            # Initialize the Hugging Face Inference Client
+            client = InferenceClient(token=self.api_key)
             
             try:
-                # Try with generation config and safety settings
-                response = self.model.generate_content(
+                # Generate text using Hugging Face Inference API
+                # Usamos un valor mucho más alto para max_new_tokens para evitar límites en la respuesta
+                response = client.text_generation(
                     prompt,
-                    generation_config=generation_config,
-                    safety_settings=safety_settings
+                    model=self.model_name,
+                    max_new_tokens=4096,  # Valor aumentado para permitir respuestas más largas
+                    temperature=self.temperature,
+                    top_k=self.top_k,
+                    top_p=self.top_p,
+                    do_sample=True,
+                    details=True,  # Obtener detalles adicionales sobre la generación
+                    return_full_text=False  # Solo queremos el texto generado, no el prompt
                 )
-            except Exception as gen_error:
-                logger.warning(f"First generation attempt failed: {gen_error}")
-                try:
-                    # Try without safety settings if there was an error
-                    response = self.model.generate_content(
-                        prompt,
-                        generation_config=generation_config
-                    )
-                except Exception as fallback_error:
-                    logger.error(f"Fallback generation attempt failed: {fallback_error}")
-                    return f"Lo siento, ocurrió un error al generar la respuesta con la API de Gemini. Por favor, verifica la configuración y los permisos de la API: {str(fallback_error)}"
-            
-            if response and hasattr(response, 'text'):
-                return response.text
-            else:
-                return "Lo siento, no pude generar una respuesta con la información disponible."
+                
+                # Extraer el texto generado y registrar información de la generación
+                generated_text = response.generated_text
+                
+                # Registrar información sobre la generación (si está disponible)
+                if hasattr(response, 'details') and response.details:
+                    finish_reason = response.details.finish_reason
+                    if finish_reason == 'length':
+                        logger.warning(f"La generación terminó por límite de longitud. Considera aumentar max_new_tokens.")
+                    else:
+                        logger.info(f"Generación completada. Razón: {finish_reason}")
+                
+                # Return generated text
+                return generated_text
+                
+            except Exception as api_error:
+                logger.error(f"API request error: {api_error}")
+                return f"Lo siento, ocurrió un error al generar la respuesta con la API de Hugging Face: {str(api_error)}"
                 
         except Exception as e:
             logger.error(f"Error generating response: {e}")

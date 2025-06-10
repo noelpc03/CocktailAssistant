@@ -164,7 +164,7 @@ class CoordinatorAgent(Agent):
                 })
                 return None
             else:
-                # Send results directly to requester
+                # Send a message indicating that LLM is required
                 self.active_operations[operation_id]["status"] = "completed"
                 
                 return {
@@ -173,8 +173,8 @@ class CoordinatorAgent(Agent):
                         "action": "search_response",
                         "status": "success",
                         "query": query,
-                        "results": results,
-                        "generated_response": None
+                        "results": [],
+                        "generated_response": "Por favor, usa la opción de LLM para obtener una respuesta generada."
                     }
                 }
         
@@ -199,14 +199,14 @@ class CoordinatorAgent(Agent):
             # Update operation status
             self.active_operations[operation_id]["status"] = "completed"
             
-            # Send complete results to requester
+            # Send only the response to requester, not the search results
             return {
                 "recipient": operation["requester"],
                 "content": {
                     "action": "search_response",
                     "status": "success",
                     "query": query,
-                    "results": operation["results"],
+                    "results": [],  # No enviamos los resultados de búsqueda
                     "generated_response": response
                 }
             }

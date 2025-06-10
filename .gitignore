@@ -3,6 +3,10 @@ data
 __pycache__
 bartender_retrieval.log
 tokenGemini.txt
+tokenMixtral.txt
+tokenHuggingFace.txt
+tokenHuggingFace.txt
+tokenHuggingFace.txt
 bartender_search.log
 rebuild_index.py
 bartender_agent_system.log

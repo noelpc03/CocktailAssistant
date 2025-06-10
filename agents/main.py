@@ -55,7 +55,7 @@ class AgentSystem:
         self.running = False
         
         # Load token
-        self.token_path = os.path.join(project_root, "tokenGemini.txt")
+        self.token_path = os.path.join(project_root, "tokenMixtral.txt")
         
         # Create agents
         self._create_agents()
@@ -213,18 +213,11 @@ async def run_cli():
                 print("-" * 50)
                 
                 if result.get("generated_response"):
-                    print("Generated Response:")
                     print(result["generated_response"])
-                    print("-" * 50)
-                    
-                print("Search Results:")
-                for i, item in enumerate(result.get("results", []), 1):
-                    print(f"{i}. {item.get('title')}")
-                    print(f"   Source: {item.get('source_url')}")
-                    if "score" in item:
-                        print(f"   Score: {item.get('score')}")
-                    print(f"   {item.get('snippet')}")
-                    print()
+                    print("-" * 50)  
+                else:
+                    print("No se pudo generar una respuesta.")
+                    print("-" * 50)  
             else:
                 print(f"Error: {result.get('message', 'Unknown error')}")
         else:

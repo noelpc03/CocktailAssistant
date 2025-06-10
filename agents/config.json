@@ -43,7 +43,7 @@
     "show_scores": true
   },
   "generation_agent": {
-    "model": "gemini-1.5-flash",
+    "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "temperature": 0.4,
     "top_k": 32,
     "top_p": 0.95,

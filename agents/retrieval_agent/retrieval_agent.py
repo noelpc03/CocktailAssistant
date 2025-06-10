@@ -111,6 +111,10 @@ class RetrievalAgent(Agent):
             original_sender = content.get("original_sender")
             query = content.get("query", "")
             
+            # Obtener la consulta del data_store para búsqueda de texto
+            if query:
+                self.data_store.set("current_query", query)
+            
             if query_vector is None:
                 return {
                     "recipient": message["sender"],
@@ -255,10 +259,31 @@ class RetrievalAgent(Agent):
                 if not self._load_index_if_exists():
                     logger.error("No index available for querying")
                     return []
-            
+                    
             # Make sure query vector is properly shaped and normalized
             if len(query_vector.shape) == 1:
                 query_vector = query_vector.reshape(1, -1)
+                
+            # Verificar y ajustar la dimensión del vector de consulta si es necesario
+            index_dimension = self.index.d
+            query_dimension = query_vector.shape[1]
+            
+            if index_dimension != query_dimension:
+                logger.warning(f"Dimension mismatch: index={index_dimension}, query={query_dimension}")
+                
+                # Este es un problema crítico - vamos a hacer una búsqueda por texto en su lugar
+                documents = self._load_document_metadata()
+                query_text = self.data_store.get("current_query", "")
+                
+                if query_text and documents:
+                    # Buscar por texto en lugar de por vector
+                    logger.info(f"Falling back to text search for query: {query_text}")
+                    results = self._text_based_search(query_text, documents)
+                    if results:
+                        return results
+                        
+                # Si no hay resultados por texto, devolvemos lista vacía
+                return []
                 
             # Normalizar el vector de consulta
             norm = np.linalg.norm(query_vector)
@@ -314,9 +339,77 @@ class RetrievalAgent(Agent):
                         results.append(doc)
                         logger.info(f"Using fallback index {i} for doc_id {doc_id}")
             
+            # Si no hay resultados, intenta búsqueda por texto
+            if not results:
+                query_text = self.data_store.get("current_query", "")
+                if query_text:
+                    text_results = self._text_based_search(query_text, documents)
+                    if text_results:
+                        results = text_results
+            
             logger.info(f"Query returned {len(results)} results in {query_time:.4f}s (threshold={self.similarity_threshold})")
             return results
             
         except Exception as e:
-            logger.error(f"Error querying index: {e}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Error querying index: {e}\n{error_details}")
+            
+            # Intenta hacer búsqueda por texto como último recurso
+            try:
+                documents = self._load_document_metadata()
+                query_text = self.data_store.get("current_query", "")
+                if query_text and documents:
+                    results = self._text_based_search(query_text, documents)
+                    if results:
+                        logger.info(f"Fallback text search found {len(results)} results")
+                        return results
+            except Exception as text_search_error:
+                logger.error(f"Text search fallback also failed: {text_search_error}")
+                
             return []
+            
+    def _text_based_search(self, query_text: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Realiza una búsqueda basada en texto.
+        
+        Args:
+            query_text: El texto de búsqueda
+            documents: Lista de documentos para buscar
+            
+        Returns:
+            Lista de documentos que coinciden con la búsqueda
+        """
+        logger.info(f"Performing text-based search for: {query_text}")
+        
+        # Convertir la consulta a minúsculas y dividir en términos
+        query_terms = query_text.lower().split()
+        results = []
+        
+        for doc in documents:
+            title = doc.get("title", "").lower()
+            text = doc.get("text", "").lower()
+            
+            # Buscar coincidencias exactas primero (más alta prioridad)
+            if query_text.lower() in title or query_text.lower() in text:
+                doc_copy = doc.copy()
+                doc_copy["score"] = 0.9  # Alta puntuación para coincidencias exactas
+                results.append(doc_copy)
+                logger.info(f"Found exact match in document: {doc.get('title')}")
+                continue
+                
+            # Buscar coincidencias parciales (términos individuales)
+            match_count = sum(1 for term in query_terms if term in title or term in text)
+            if match_count > 0:
+                match_ratio = match_count / len(query_terms)
+                if match_ratio > 0.5:  # Al menos la mitad de los términos coinciden
+                    doc_copy = doc.copy()
+                    doc_copy["score"] = 0.5 * match_ratio  # Puntuación proporcional a cuántos términos coinciden
+                    results.append(doc_copy)
+                    logger.info(f"Found partial match in document: {doc.get('title')} (score: {doc_copy['score']:.2f})")
+        
+        # Ordenar por puntuación (de mayor a menor)
+        results.sort(key=lambda x: x.get("score", 0), reverse=True)
+        
+        logger.info(f"Text-based search found {len(results)} results")
+        return results

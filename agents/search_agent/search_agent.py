@@ -134,6 +134,9 @@ class SearchAgent(Agent):
         start_time = time.time()
         logger.info(f"Processing query: {query}")
         
+        # Store the original query text in the data store for text-based search backup
+        self.data_store.set("current_query", query)
+        
         try:
             # Use the same model as in the working implementation
             from sentence_transformers import SentenceTransformer

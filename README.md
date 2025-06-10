@@ -52,7 +52,7 @@ El sistema está compuesto por los siguientes agentes:
 
 -**Función**: Generar respuestas utilizando modelos de lenguaje
 
--**Responsabilidades**: Integrar con Google Gemini, construir prompts con el contexto relevante
+-**Responsabilidades**: Integrar con Mixtral, construir prompts con el contexto relevante
 
 ## Requisitos
 
@@ -79,9 +79,15 @@ pipinstall-rrequirements.txt
 
 ```
 
-3. Configurar la API key para Gemini:
+3. Configurar la API key para Hugging Face:
 
-- Crear un archivo `tokenGemini.txt` en la raíz del proyecto con la API key de Gemini
+- Crear un archivo `tokenHuggingFace.txt` en la raíz del proyecto con la API key de Hugging Face
+- Puedes obtener una API key gratuita en [Hugging Face](https://huggingface.co/settings/tokens)
+- Para probar tu conexión, ejecuta el siguiente script:
+
+```bash
+python test_huggingface_connection.py
+```
 
 ## Uso
 
