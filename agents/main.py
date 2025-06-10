@@ -136,7 +136,7 @@ class AgentSystem:
             
             try:
                 # Wait for the crawl to complete with a timeout
-                await asyncio.wait_for(crawl_future, timeout=300)  # 5-minute timeout
+                await asyncio.wait_for(crawl_future, timeout=1800)  # 30-minute timeout
                 return {
                     "success": True,
                     "message": "Crawl and index process completed"

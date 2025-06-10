@@ -1,11 +1,33 @@
 {
   "crawler_agent": {
     "default_urls": [
-      "https://www.liquor.com/recipes/margarita/",
-      "https://www.diffordsguide.com/cocktails/recipe/42/martini",
-      "https://www.thespruceeats.com/classic-cocktails-everyone-should-know-760778",
-      "https://en.wikipedia.org/wiki/Bartender"
-    ]
+      "https://es.wikipedia.org/wiki/C%C3%B3ctel",
+      "https://en.wikipedia.org/wiki/List_of_cocktails"
+    ],
+    "max_depth": 2,
+    "ant_colony": {
+      "num_ants": 8,
+      "alpha": 1.0,
+      "beta": 2.0,
+      "evaporation_rate": 0.1,
+      "deposit_factor": 1.0,
+      "cocktail_keywords": [
+        "cocktail", "coctel", "cóctel", "drink", "bebida", 
+        "bartender", "recipe", "receta", "ingredients", "ingredientes",
+        "gin", "vodka", "rum", "tequila", "whiskey", "whisky", "bourbon"
+      ],
+      "trusted_domains_weight": {
+        "wikipedia.org": 0.9,
+        "liquor.com": 0.8,
+        "diffordsguide.com": 0.8,
+        "iba-world.com": 0.7,
+        "thespruceeats.com": 0.7
+      },
+      "blacklist_patterns": [
+        "Special:", "User:", "Talk:", "File:", "Template:", "Help:", 
+        "Category_talk:", "disambiguation", "desambiguación"
+      ]
+    }
   },
   "vectorizer_agent": {
     "model_name": "sentence-transformers/all-mpnet-base-v2",

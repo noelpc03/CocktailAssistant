@@ -21,7 +21,14 @@ El sistema está compuesto por los siguientes agentes:
 
 -**Función**: Extraer información de páginas web
 
--**Responsabilidades**: Navegar por URLs, obtener contenido relevante, limpiar y estructurar la información
+-**Responsabilidades**: Realizar crawling BFS (Breadth-First Search) de páginas web sobre cócteles, partiendo de URLs semilla, obtener contenido relevante, limpiar y estructurar la información
+
+-**Características del Crawler BFS**:
+  - Utiliza algoritmo de búsqueda en amplitud (BFS) para explorar páginas web
+  - Comienza desde URLs semilla específicas sobre cócteles
+  - Control de profundidad máxima para limitar la exploración
+  - Extracción de enlaces y normalización de URLs
+  - Prevención de bucles mediante registro de URLs ya visitadas
 
 ### 3. Agente de Vectorización (Vectorizer Agent)
 
