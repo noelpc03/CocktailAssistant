@@ -91,29 +91,54 @@ python test_huggingface_connection.py
 
 ## Uso
 
-### Ejecutar el sistema completo
+### Comandos del Sistema
+
+#### Ejecutar el sistema completo con búsqueda inteligente (Agente de Decisión)
 
 ```bash
-
-./agent_system.shsearch"¿Cómo preparar un Martini?"
-
+./agent_system.sh search "¿Cómo preparar un Martini?"
 ```
 
-### Ejecutar solo la búsqueda sin generación LLM
+#### Iniciar el proceso de crawling y indexación
 
 ```bash
-
-./agent_system.shsearch"Ingredientes del Manhattan"--no-llm
-
+./agent_system.sh crawl --urls "https://www.url1.com" "https://www.url2.com"
 ```
+Si no se especifican URLs, se utilizarán las predeterminadas del archivo de configuración.
 
-### Iniciar el proceso de crawling y indexación
+#### Extraer la ontología de los documentos indexados
 
 ```bash
-
-./agent_system.shcrawl--urls"https://www.url1.com""https://www.url2.com"
-
+./agent_system.sh extract_ontology
 ```
+o
+```bash
+./agent_system.sh ontology extract
+```
+
+#### Consultar la ontología con lenguaje natural
+
+```bash
+./agent_system.sh ontology query "¿Qué cócteles llevan vodka?"
+```
+
+### Interfaz Gráfica
+
+Para iniciar la interfaz gráfica web:
+
+```bash
+./run_app.sh
+```
+
+La interfaz web permite realizar búsquedas utilizando el Agente de Decisión, que selecciona automáticamente la mejor estrategia de búsqueda combinando embeddings y ontología.
+
+#### Recomendación:
+Antes de usar la interfaz gráfica, asegúrate de haber ejecutado:
+
+1. El proceso de crawling: `./agent_system.sh crawl`
+2. La extracción de ontología: `./agent_system.sh extract_ontology`
+
+Esto garantiza que el sistema tenga suficiente información para responder consultas.
 
 ## Configuración
 

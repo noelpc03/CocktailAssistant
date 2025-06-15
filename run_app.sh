@@ -7,6 +7,15 @@ echo "Instalando dependencias necesarias..."
 # Asegurarse de que las dependencias estén instaladas
 pip install -q -r requirements.txt
 
+echo "Verificando que el sistema esté listo para usar el agente de decisión..."
+# Verificar si la ontología está generada
+if [ ! -f "./ontology/cocktail_ontology.owl" ]; then
+    echo "ATENCIÓN: No se ha detectado la ontología. Se recomienda ejecutar primero:"
+    echo "./agent_system.sh extract_ontology"
+    echo ""
+    echo "Continuando de todos modos..."
+fi
+
 echo "Iniciando la aplicación web..."
 streamlit run app.py
 
