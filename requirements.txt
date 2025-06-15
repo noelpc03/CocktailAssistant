@@ -14,4 +14,12 @@ tqdm>=4.60.0
 python-dotenv>=0.17.1
 
 # LLM Integration
-huggingface_hub>=0.19.0 
+huggingface_hub>=0.19.0
+
+# Ontology Management
+rdflib>=6.0.0
+owlrl>=5.2.3
+graphviz>=0.20.1
+
+# Web Interface
+streamlit>=1.24.0 

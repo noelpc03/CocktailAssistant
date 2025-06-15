@@ -38,6 +38,10 @@ DEFAULT_CONFIG = {
         "top_p": 0.95,
         "max_output_tokens": 2048
     },
+    "strategy_agent": {
+        "model": "mixtral-8x7b",
+        "temperature": 0.1
+    },
     "coordinator_agent": {
         "timeout": 30
     }

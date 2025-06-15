@@ -20,6 +20,8 @@ from agents import (
     RetrievalAgent,
     SearchAgent,
     GenerationAgent,
+    OntologyAgent,
+    StrategyAgent,
     CoordinatorAgent,
     MessageBroker,
     ConfigManager
@@ -73,6 +75,8 @@ class AgentSystem:
         retriever = RetrievalAgent("retrieval_agent")
         searcher = SearchAgent("search_agent")
         generator = GenerationAgent("generation_agent")
+        ontology = OntologyAgent("ontology_agent")
+        strategy = StrategyAgent("strategy_agent")
         
         # Register all agents with coordinator
         self.coordinator.register_agent("crawler_agent", crawler)
@@ -80,6 +84,8 @@ class AgentSystem:
         self.coordinator.register_agent("retrieval_agent", retriever)
         self.coordinator.register_agent("search_agent", searcher)
         self.coordinator.register_agent("generation_agent", generator)
+        self.coordinator.register_agent("strategy_agent", strategy)
+        self.coordinator.register_agent("ontology_agent", ontology)
         self.coordinator.register_agent("coordinator_agent", self.coordinator)
         
         logger.info("All agents created and registered")
@@ -92,8 +98,15 @@ class AgentSystem:
             
         logger.info("Starting agent system")
         
-        # Start coordinator
+        # Start all agents through coordinator
+        # El coordinador ya maneja el inicio de MessageBroker
         await self.coordinator.start()
+        
+        # Iniciar manualmente el agente de estrategia para asegurar que cargue su API key
+        if "strategy_agent" in self.coordinator.registered_agents:
+            strategy_agent = self.coordinator.registered_agents["strategy_agent"]
+            await strategy_agent.start()
+            logger.debug("Strategy agent started explicitly to ensure API key loading")
         
         self.running = True
         logger.info("Agent system started")
@@ -170,6 +183,55 @@ class AgentSystem:
         results = await self.coordinator.search(query, use_llm)
         
         return results
+        
+    async def extract_ontology(self) -> Dict[str, Any]:
+        """
+        Extract ontology from indexed documents.
+        
+        Returns:
+            Status information
+        """
+        if not self.running:
+            await self.start()
+            
+        logger.info("Starting ontology extraction")
+        results = await self.coordinator.extract_ontology()
+        
+        return results
+    
+    async def query_ontology(self, query: str, use_natural_language: bool = True) -> Dict[str, Any]:
+        """
+        Query the ontology.
+        
+        Args:
+            query: SPARQL query or natural language query
+            use_natural_language: Whether the query is in natural language
+            
+        Returns:
+            Query results
+        """
+        if not self.running:
+            await self.start()
+            
+        logger.info(f"Querying ontology: {query}")
+        results = await self.coordinator.query_ontology(query, use_natural_language)
+        
+        return results
+        
+    async def visualize_ontology(self) -> Dict[str, Any]:
+        """
+        Generate visualization for the ontology.
+        
+        Returns:
+            Status information with path to visualization file
+        """
+        if not self.running:
+            await self.start()
+            
+        logger.info("Generating ontology visualization")
+        results = await self.coordinator.visualize_ontology()
+        
+        return results
 
 
 async def run_cli():
@@ -186,6 +248,21 @@ async def run_cli():
     search_parser = subparsers.add_parser("search", help="Search for information")
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument("--no-llm", action="store_true", help="Don't use LLM")
+    
+    # Ontology commands
+    ontology_parser = subparsers.add_parser("ontology", help="Ontology operations")
+    ontology_subparsers = ontology_parser.add_subparsers(dest="ontology_command", help="Ontology command to run")
+    
+    # Extract ontology command
+    extract_parser = ontology_subparsers.add_parser("extract", help="Extract ontology from indexed documents")
+    
+    # Query ontology command
+    query_parser = ontology_subparsers.add_parser("query", help="Query the ontology")
+    query_parser.add_argument("query_text", help="Query text (SPARQL or natural language)")
+    query_parser.add_argument("--sparql", action="store_true", help="Query is in SPARQL format")
+    
+    # Visualize ontology command
+    visualize_parser = ontology_subparsers.add_parser("visualize", help="Generate visualization of the ontology")
     
     args = parser.parse_args()
     
@@ -220,6 +297,85 @@ async def run_cli():
                     print("-" * 50)  
             else:
                 print(f"Error: {result.get('message', 'Unknown error')}")
+                
+        elif args.command == "ontology":
+            if args.ontology_command == "extract":
+                print("Extracting ontology from indexed documents...")
+                result = await system.extract_ontology()
+                
+                if result.get("status") == "success":
+                    print(f"Ontology extraction successful: {result.get('message')}")
+                    print(f"Ontology saved to: {result.get('ontology_file')}")
+                else:
+                    print(f"Error: {result.get('message', 'Unknown error')}")
+                    
+            elif args.ontology_command == "query":
+                use_natural_language = not args.sparql
+                result = await system.query_ontology(args.query_text, use_natural_language)
+                
+                print("\n\n")  # Add some clear space
+                if result.get("status") == "success":
+                    print(f"=== QUERY RESULTS ===")
+                    print("=" * 50)
+                    
+                    # Print results in tabular format
+                    results = result.get("results", [])
+                    if results:
+                        # First, check if there's a natural language response (for natural language queries)
+                        nl_responses = [r.get("nl_response") for r in results if "nl_response" in r]
+                        if nl_responses and nl_responses[0] and use_natural_language:
+                            print("RESPUESTA EN LENGUAJE NATURAL:")
+                            print("-" * 50)
+                            print(nl_responses[0])
+                            print("-" * 50)
+                            print("\nDETALLES TÉCNICOS:")
+                            print("-" * 50)
+                            
+                        # Extract headers from results that aren't metadata
+                        valid_results = [r for r in results if not any(key in r for key in ["generated_sparql", "info", "nl_response"])]
+                        
+                        if valid_results:
+                            # Extract headers
+                            headers = list(valid_results[0].keys())
+                            
+                            # Print headers
+                            header_str = " | ".join(headers)
+                            print(header_str)
+                            print("-" * len(header_str))
+                            
+                            # Print rows
+                            for row in valid_results:
+                                values = [str(row.get(h, "")) for h in headers]
+                                print(" | ".join(values))
+                                
+                            print(f"\nFound {len(valid_results)} cocktails matching the query.")
+                        else:
+                            # Look for info messages if no valid results and no NL response shown
+                            if not (nl_responses and nl_responses[0] and use_natural_language):
+                                info_messages = [r.get("info") for r in results if "info" in r]
+                                if info_messages:
+                                    print("\n".join(info_messages))
+                                else:
+                                    print("No results found")
+                    else:
+                        print("No results found")
+                else:
+                    print(f"Error: {result.get('message', 'Unknown error')}")
+                
+                # Flush stdout to ensure output is displayed
+                import sys
+                sys.stdout.flush()
+                    
+            elif args.ontology_command == "visualize":
+                print("Generating ontology visualization...")
+                result = await system.visualize_ontology()
+                
+                if result.get("status") == "success":
+                    print(f"Visualization generated: {result.get('visualization_file')}")
+                else:
+                    print(f"Error: {result.get('message', 'Unknown error')}")
+            else:
+                print("No ontology command specified. Use 'extract', 'query', or 'visualize'.")
         else:
             print("No command specified. Use --help for usage information.")
             

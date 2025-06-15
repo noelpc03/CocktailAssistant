@@ -6,7 +6,6 @@ import logging
 from typing import Dict, Any, List
 import requests
 import json
-from huggingface_hub import InferenceClient
 
 from agents.common.agent_interface import Agent
 from agents.common.config_manager import ConfigManager
@@ -28,15 +27,19 @@ class GenerationAgent(Agent):
         super().__init__(agent_id, config)
         self.config = config or ConfigManager().get_agent_config("generation_agent")
         self.data_store = DataStore()
-        self.model_name = self.config.get("model", "mixtral-8x7b")
-        self.temperature = self.config.get("temperature", 0.4)
+        # Configuración para Fireworks AI
+        self.model_name = self.config.get("model", "accounts/fireworks/models/mixtral-8x22b-instruct")
+        self.temperature = self.config.get("temperature", 0.6)
         self.top_k = self.config.get("top_k", 32)
         self.top_p = self.config.get("top_p", 0.95)
-        self.max_output_tokens = self.config.get("max_output_tokens", 2048)
+        self.max_output_tokens = self.config.get("max_output_tokens", 512)
         
         # API key will be loaded from file at runtime
         self.api_key = None
         self.model = None
+        
+        # URL de la API de Fireworks (compatible con OpenAI)
+        self.api_url = "https://api.fireworks.ai/inference/v1/chat/completions"
         
     async def start(self) -> None:
         """Start the generation agent"""
@@ -119,7 +122,7 @@ class GenerationAgent(Agent):
     
     def _initialize_model(self, api_key_path: str = None) -> bool:
         """
-        Initialize the Mixtral model connection.
+        Initialize the Fireworks AI model connection.
         
         Args:
             api_key_path: Path to API key file
@@ -131,16 +134,35 @@ class GenerationAgent(Agent):
             # Load API key if needed
             if not self.api_key and api_key_path:
                 self.api_key = self._load_api_key(api_key_path)
+            
+            # Intenta buscar la clave API en la ubicación predeterminada si no se encontró
+            if not self.api_key:
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                default_paths = [
+                    os.path.join(project_root, "tokenHuggingFace.txt"),
+                    os.path.join(project_root, "tokenFireworks.txt"),
+                    os.path.join(project_root, "tokenGemini.txt"),
+                ]
+                
+                print(f"[Generation] Buscando API key en rutas predeterminadas...")
+                for path in default_paths:
+                    if os.path.exists(path):
+                        print(f"[Generation] Intentando cargar clave desde {path}")
+                        self.api_key = self._load_api_key(path)
+                        if self.api_key:
+                            print(f"[Generation] ✓ Clave API cargada correctamente desde {path}")
+                            break
                 
             if not self.api_key:
+                print(f"[Generation] ❌ No se encontró ninguna clave API válida")
                 logger.error("No API key available")
                 return False
                 
-            # For Mixtral, we don't need to initialize a model object here
-            # We'll just verify the API key is available
+            # Para Fireworks AI, simplemente verificamos que la clave API esté disponible
+            # La conexión real se hace en cada solicitud
             self.model = True
             
-            logger.info(f"Model {self.model_name} connection initialized successfully")
+            logger.info(f"Model {self.model_name} connection initialized successfully using Fireworks AI API")
             return True
             
         except Exception as e:
@@ -168,15 +190,15 @@ class GenerationAgent(Agent):
         # Reservamos ~2K tokens para la respuesta y estructura del prompt
         MAX_CONTEXT_TOKENS = 30000  
         
-        # Estructura básica del prompt con formato específico para Mixtral Instruct
-        base_prompt = f"""<s>[INST] Como asistente experto en bebidas y coctelería, responde a la siguiente consulta utilizando la información proporcionada.
+        # Estructura básica del prompt para el formato de chat
+        base_prompt = f"""Como asistente experto en bebidas y coctelería, responde a la siguiente consulta utilizando la información proporcionada.
 
 Consulta: {query}
 
 Información de referencia:
 """
         
-        final_part = "\nBasándote en la información anterior, por favor responde a la consulta de manera concisa y profesional. No incluyas referencias o menciones a las fuentes específicas en tu respuesta. [/INST]"
+        final_part = "\nBasándote en la información anterior, por favor responde a la consulta de manera concisa y profesional. No incluyas referencias o menciones a las fuentes específicas en tu respuesta."
         
         # Estimar tokens ya utilizados
         base_tokens = (len(base_prompt) + len(final_part)) // CHARS_PER_TOKEN
@@ -217,12 +239,19 @@ Información de referencia:
         prompt += final_part
         
         logger.info(f"Prompt construido con {len(used_sources)} de {len(search_results)} documentos disponibles")
+        logger.info(f"Tamaño del prompt: {len(prompt)} caracteres")
+        
+        # Limitar el tamaño final del prompt para evitar errores
+        max_prompt_length = 8000  # Un límite conservador
+        if len(prompt) > max_prompt_length:
+            logger.warning(f"El prompt excede el tamaño máximo. Truncando de {len(prompt)} a {max_prompt_length} caracteres")
+            prompt = prompt[:max_prompt_length]
         
         return prompt
     
     async def generate_response(self, query: str, search_results: List[Dict[str, Any]], api_key_path: str = None) -> str:
         """
-        Generate a response using the LLM.
+        Generate a response using the LLM with Fireworks AI API.
         
         Args:
             query: User query
@@ -243,41 +272,64 @@ Información de referencia:
             # Build the prompt
             prompt = self._build_prompt(query, search_results)
             
-            # Initialize the Hugging Face Inference Client
-            client = InferenceClient(token=self.api_key)
-            
             try:
-                # Generate text using Hugging Face Inference API
-                # Usamos un valor mucho más alto para max_new_tokens para evitar límites en la respuesta
-                response = client.text_generation(
-                    prompt,
-                    model=self.model_name,
-                    max_new_tokens=4096,  # Valor aumentado para permitir respuestas más largas
-                    temperature=self.temperature,
-                    top_k=self.top_k,
-                    top_p=self.top_p,
-                    do_sample=True,
-                    details=True,  # Obtener detalles adicionales sobre la generación
-                    return_full_text=False  # Solo queremos el texto generado, no el prompt
-                )
+                # Preparar la solicitud para la API de Fireworks
+                headers = {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}"
+                }
                 
-                # Extraer el texto generado y registrar información de la generación
-                generated_text = response.generated_text
+                # Formatear el prompt como un mensaje de chat
+                payload = {
+                    "model": self.model_name,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "max_tokens": self.max_output_tokens,
+                    "stream": False
+                }
                 
-                # Registrar información sobre la generación (si está disponible)
-                if hasattr(response, 'details') and response.details:
-                    finish_reason = response.details.finish_reason
-                    if finish_reason == 'length':
-                        logger.warning(f"La generación terminó por límite de longitud. Considera aumentar max_new_tokens.")
+                # Realizar la solicitud a la API con timeout
+                response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+                response.raise_for_status()  # Lanzar excepción si hay error HTTP
+                
+                # Procesar la respuesta
+                response_data = response.json()
+                
+                if "choices" not in response_data or not response_data["choices"]:
+                    logger.error(f"Respuesta de API inesperada: {response_data}")
+                    return "Lo siento, el servicio de IA no proporcionó una respuesta válida."
+                
+                # Extraer el texto generado
+                generated_text = response_data["choices"][0]["message"]["content"]
+                
+                # Registrar información sobre la generación
+                if "finish_reason" in response_data["choices"][0]:
+                    finish_reason = response_data["choices"][0]["finish_reason"]
+                    if finish_reason == "length":
+                        logger.warning(f"La generación terminó por límite de longitud. Considera aumentar max_tokens.")
                     else:
                         logger.info(f"Generación completada. Razón: {finish_reason}")
+                
+                # Registrar información adicional útil para depuración
+                logger.info(f"Respuesta generada con {len(generated_text)} caracteres")
                 
                 # Return generated text
                 return generated_text
                 
             except Exception as api_error:
                 logger.error(f"API request error: {api_error}")
-                return f"Lo siento, ocurrió un error al generar la respuesta con la API de Hugging Face: {str(api_error)}"
+                error_details = ""
+                if hasattr(api_error, 'response') and api_error.response:
+                    try:
+                        error_details = f" - Detalles: {api_error.response.json()}"
+                    except:
+                        error_details = f" - Código de estado: {api_error.response.status_code}"
+                
+                return f"Lo siento, ocurrió un error al generar la respuesta con la API de Fireworks AI: {str(api_error)}{error_details}"
                 
         except Exception as e:
             logger.error(f"Error generating response: {e}")

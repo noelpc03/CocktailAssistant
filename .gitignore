@@ -11,3 +11,5 @@ bartender_search.log
 rebuild_index.py
 bartender_agent_system.log
 crawl_debug_output.log
+ontology
+agent_system_output.log

@@ -43,13 +43,20 @@
     "show_scores": true
   },
   "generation_agent": {
-    "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "model": "accounts/fireworks/models/mixtral-8x22b-instruct",
     "temperature": 0.4,
     "top_k": 32,
     "top_p": 0.95,
     "max_output_tokens": 2048
   },
   "coordinator_agent": {
-    "timeout": 30
+    "timeout": 60
+  },
+  "ontology_agent": {
+    "batch_size": 3
+  },
+  "strategy_agent": {
+    "model": "accounts/fireworks/models/mixtral-8x22b-instruct",
+    "temperature": 0.1
   }
 }

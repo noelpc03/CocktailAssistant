@@ -8,6 +8,7 @@ import os
 import json
 
 from agents.common.agent_interface import Agent
+from agents.coordinator_agent.handle_ontology_results import handle_ontology_results, format_ontology_results_for_llm
 from agents.common.config_manager import ConfigManager
 from agents.common.data_store import DataStore
 from agents.common.message_broker import MessageBroker
@@ -29,7 +30,7 @@ class CoordinatorAgent(Agent):
         self.config = config or ConfigManager().get_agent_config("coordinator_agent")
         self.data_store = DataStore()
         self.message_broker = MessageBroker()
-        self.timeout = self.config.get("timeout", 30)
+        self.timeout = self.config.get("timeout", 120)  # Increased timeout to 120 seconds
         
         # Track active operations
         self.active_operations = {}
@@ -123,9 +124,10 @@ class CoordinatorAgent(Agent):
                 "results": None
             }
             
-            # Send to search agent
-            await self.send_message("search_agent", {
-                "action": "process_query",
+            # First send to strategy agent to determine search approach
+            logger.info(f"Sending query '{query}' to strategy agent")
+            await self.send_message("strategy_agent", {
+                "action": "determine_strategy",
                 "query": query,
                 "operation_id": operation_id
             })
@@ -133,6 +135,42 @@ class CoordinatorAgent(Agent):
             # No immediate response
             return None
         
+        elif action == "strategy_response":
+            # Response from strategy agent
+            query = content.get("query", "")
+            strategy = content.get("strategy", "embedding")  # Default to embedding if not specified
+            explanation = content.get("explanation", "")
+            operation_id = content.get("operation_id", "")
+            
+            logger.info(f"Strategy determined for query '{query}': {strategy} - {explanation}")
+            
+            if not operation_id or operation_id not in self.active_operations:
+                logger.warning(f"Invalid operation ID received from strategy agent: {operation_id}")
+                return None
+                
+            # Update operation with strategy info
+            self.active_operations[operation_id]["strategy"] = strategy
+            self.active_operations[operation_id]["strategy_explanation"] = explanation
+            
+            # Depending on the strategy, send to appropriate agent
+            if strategy == "ontology":
+                logger.info(f"Using ontology-based search for query: {query}")
+                await self.send_message("ontology_agent", {
+                    "action": "query_ontology",
+                    "query": query,
+                    "operation_id": operation_id
+                })
+            else:  # Default to embedding search
+                logger.info(f"Using embedding-based search for query: {query}")
+                await self.send_message("search_agent", {
+                    "action": "process_query",
+                    "query": query,
+                    "operation_id": operation_id
+                })
+            
+            # No immediate response
+            return None
+            
         elif action == "search_results":
             # Results from search agent
             query = content.get("query", "")
@@ -311,6 +349,67 @@ class CoordinatorAgent(Agent):
                 }
             }
             
+        elif action == "ontology_results":
+            # Handle the results from ontology agent
+            # Using a dedicated method for better organization
+            return await self._handle_ontology_results(content, message)
+            
+            if not operation:
+                # No matching operation found
+                logger.warning(f"No operation found for ontology results with ID {operation_id}")
+                return None
+                
+            # Update operation status
+            self.active_operations[operation_id]["status"] = "completed"
+            self.active_operations[operation_id]["results"] = results
+            
+            # Check if use_llm is True and results exist
+            use_llm = operation.get("use_llm", False)
+            
+            if use_llm and results:
+                # Format results for LLM processing
+                context = []
+                
+                for result in results:
+                    result_type = result.get("type", "")
+                    
+                    if result_type == "cocktail_with_ingredient":
+                        context.append(f"Cocktail {result['cocktail']} contains {result['ingredient']}.")
+                    elif result_type == "ingredient_in_cocktail":
+                        context.append(f"{result['cocktail']} contains {result['ingredient']}.")
+                    elif result_type == "glass_for_cocktail":
+                        context.append(f"{result['cocktail']} is served in a {result['glass']}.")
+                    elif result_type == "method_for_cocktail":
+                        context.append(f"{result['cocktail']} is prepared by {result['method']}.")
+                    elif result_type == "cocktail_description":
+                        context.append(f"{result['cocktail']}: {result['description']}")
+                    elif result_type == "general_match":
+                        context.append(f"{result['subject']} {result['predicate']} {result['object']}.")
+                
+                context_text = "\n".join(context)
+                
+                # Send to generation agent
+                await self.send_message("generation_agent", {
+                    "action": "generate_response",
+                    "query": query,
+                    "context": context_text,
+                    "operation_id": operation_id
+                })
+                
+                # No response yet, wait for generation
+                return None
+            else:
+                # Send results directly to requester
+                return {
+                    "recipient": operation["requester"],
+                    "content": {
+                        "action": "search_response",
+                        "status": "success", 
+                        "query": query,
+                        "results": results
+                    }
+                }
+        
         return None
     
     async def start_crawl_and_index(self, urls: List[str] = None) -> bool:
@@ -425,3 +524,217 @@ class CoordinatorAgent(Agent):
                 "status": "error",
                 "message": f"Error: {str(e)}"
             }
+    
+    async def extract_ontology(self) -> Dict[str, Any]:
+        """
+        Extract ontology from indexed documents.
+        
+        Returns:
+            Status information
+        """
+        try:
+            # Create a future to wait for the response
+            future = asyncio.Future()
+            
+            # Create a temporary message handler
+            async def response_handler(message: Dict[str, Any]) -> None:
+                print(f"[Coordinator] Handler de respuesta recibió mensaje: {message}")
+                logger.info(f"Response handler received message: {message}")
+                
+                content = message.get("content", {})
+                if content.get("action") == "ontology_results":
+                    print(f"[Coordinator] Recibida respuesta de ontología")
+                    logger.info(f"Received ontology_results action, completing future")
+                    if not future.done():
+                        future.set_result(content)
+            
+            # Subscribe to responses
+            temp_id = f"temp_ontology_{id(future)}"
+            self.message_broker.subscribe(temp_id, response_handler)
+            
+            # Send the ontology extraction request to ontology_agent
+            logger.info(f"Sending extract_ontology request to ontology_agent from {temp_id}")
+            print(f"[Coordinator] Enviando solicitud de extracción de ontología al agente de ontología")
+            
+            # Enviar mensaje asegurando que se incluyan sender y recipient correctamente
+            message = {
+                "sender": temp_id,
+                "recipient": "ontology_agent",
+                "content": {
+                    "action": "extract_ontology",
+                    "operation_id": temp_id
+                }
+            }
+            
+            print(f"[Coordinator] Mensaje completo a enviar: {message}")
+            await self.message_broker.publish_message(message)
+            print(f"[Coordinator] Mensaje publicado, esperando respuesta...")
+            
+            # Wait for response with timeout (mucho más tiempo para extracción de ontología)
+            try:
+                result = await asyncio.wait_for(future, self.timeout * 60)  # 60 veces el timeout normal para dar mucho más tiempo
+                print(f"[Coordinator] Respuesta recibida: {result}")
+                return result
+            except asyncio.TimeoutError:
+                print(f"[Coordinator] ❌ Timeout esperando respuesta de ontología")
+                return {
+                    "status": "error",
+                    "message": "Ontology extraction timed out después de un tiempo extendido"
+                }
+            finally:
+                # Unsubscribe
+                self.message_broker.unsubscribe(temp_id)
+                print(f"[Coordinator] Desuscrito de {temp_id}")
+                
+        except Exception as e:
+            logger.error(f"Error extracting ontology: {e}")
+            return {
+                "status": "error",
+                "message": f"Error: {str(e)}"
+            }
+    
+    async def query_ontology(self, query: str, use_natural_language: bool = True) -> Dict[str, Any]:
+        """
+        Query the ontology with improved timeout handling.
+        
+        Args:
+            query: SPARQL query or natural language query
+            use_natural_language: Whether the query is in natural language
+            
+        Returns:
+            Query results
+        """
+        try:
+            # Log the start of the process
+            print(f"[Coordinator] Iniciando consulta de ontología: '{query}' (lenguaje natural: {use_natural_language})")
+            logger.info(f"Starting ontology query: '{query}' (natural language: {use_natural_language})")
+            
+            # Create a future to wait for the response
+            future = asyncio.Future()
+            
+            # Create a temporary message handler
+            async def response_handler(message: Dict[str, Any]) -> None:
+                content = message.get("content", {})
+                if content.get("action") == "query_results":
+                    print(f"[Coordinator] Recibida respuesta de consulta de ontología")
+                    if not future.done():
+                        future.set_result(content)
+            
+            # Subscribe to responses
+            temp_id = f"temp_query_{id(future)}"
+            self.message_broker.subscribe(temp_id, response_handler)
+            
+            # Prepare message to send to ontology agent
+            message = {
+                "sender": temp_id,
+                "recipient": "ontology_agent",
+                "content": {
+                    "action": "query_ontology",
+                    "query": query,
+                    "operation_id": temp_id,
+                    "use_natural_language": use_natural_language
+                }
+            }
+            
+            # Directly send message to ontology agent
+            print(f"[Coordinator] Enviando solicitud al agente de ontología...")
+            await self.message_broker.publish_message(message)
+            
+            # Wait for response with extended timeout for ontology queries (90 seconds)
+            # Reducido de 120 a 90 segundos ya que hemos implementado timeouts internos
+            ontology_query_timeout = 90
+            
+            try:
+                print(f"[Coordinator] Esperando respuesta (timeout: {ontology_query_timeout}s)...")
+                result = await asyncio.wait_for(future, ontology_query_timeout)
+                print(f"[Coordinator] ✓ Respuesta recibida: {len(str(result))} caracteres")
+                return result
+            except asyncio.TimeoutError:
+                error_msg = f"La consulta de ontología excedió el tiempo límite de {ontology_query_timeout} segundos."
+                logger.error(f"Ontology query timed out after {ontology_query_timeout} seconds")
+                print(f"[Coordinator] ❌ {error_msg}")
+                
+                if use_natural_language:
+                    error_msg += " Intente con una consulta más específica o use SPARQL directamente con --sparql."
+                
+                return {
+                    "status": "error",
+                    "message": error_msg
+                }
+            finally:
+                # Unsubscribe to clean up
+                self.message_broker.unsubscribe(temp_id)
+                print(f"[Coordinator] Desuscrito de {temp_id}")
+                
+        except Exception as e:
+            error_msg = f"Error al consultar la ontología: {str(e)}"
+            logger.error(error_msg)
+            print(f"[Coordinator] ❌ {error_msg}")
+            return {
+                "status": "error",
+                "message": error_msg
+            }
+    
+    async def visualize_ontology(self) -> Dict[str, Any]:
+        """
+        Generate visualization for the ontology.
+        
+        Returns:
+            Status information with path to visualization file
+        """
+        try:
+            # Create a future to wait for the response
+            future = asyncio.Future()
+            
+            # Create a temporary message handler
+            async def response_handler(message: Dict[str, Any]) -> None:
+                content = message.get("content", {})
+                if content.get("action") == "visualization_results":
+                    if not future.done():
+                        future.set_result(content)
+            
+            # Subscribe to responses
+            temp_id = f"temp_visualization_{id(future)}"
+            self.message_broker.subscribe(temp_id, response_handler)
+            
+            # Send the visualization request
+            await self.process_message({
+                "sender": temp_id,
+                "recipient": self.agent_id,
+                "content": {
+                    "action": "visualize_ontology"
+                }
+            })
+            
+            # Wait for response with timeout
+            try:
+                result = await asyncio.wait_for(future, self.timeout)
+                return result
+            except asyncio.TimeoutError:
+                return {
+                    "status": "error",
+                    "message": "Ontology visualization timed out"
+                }
+            finally:
+                # Unsubscribe
+                self.message_broker.unsubscribe(temp_id)
+                
+        except Exception as e:
+            logger.error(f"Error visualizing ontology: {e}")
+            return {
+                "status": "error",
+                "message": f"Error: {str(e)}"
+            }
+    
+    async def _handle_ontology_results(self, content, message):
+        """
+        Handle results from the ontology agent.
+        
+        Args:
+            content: The message content
+            message: The full message
+            
+        Returns:
+            Response message or None
+        """
+        return await handle_ontology_results(self, content, message)

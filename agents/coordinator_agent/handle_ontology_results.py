@@ -1,0 +1,103 @@
+"""
+Handler for ontology query results in the coordinator agent.
+"""
+import logging
+
+logger = logging.getLogger(__name__)
+
+async def handle_ontology_results(self, content, message):
+    """
+    Handle results from ontology agent.
+    
+    Args:
+        content: The message content
+        message: The full message
+        
+    Returns:
+        Response message or None
+    """
+    query = content.get("query", "")
+    results = content.get("results", [])
+    operation_id = content.get("operation_id", "")
+    
+    logger.info(f"Handling ontology results for query: {query}")
+    
+    # Find the operation
+    operation = None
+    if operation_id in self.active_operations:
+        operation = self.active_operations[operation_id]
+    else:
+        # Try to find by query as fallback
+        for op_id, op in self.active_operations.items():
+            if op.get("type") == "search" and op.get("query") == query:
+                operation = op
+                operation_id = op_id
+                break
+    
+    if not operation:
+        # No matching operation found
+        logger.warning(f"No operation found for ontology results with ID {operation_id}")
+        return None
+    
+    # Update operation status
+    self.active_operations[operation_id]["status"] = "completed"
+    self.active_operations[operation_id]["results"] = results
+    
+    # Check if use_llm is True and results exist
+    use_llm = operation.get("use_llm", False)
+    
+    if use_llm and results:
+        # Format results for LLM processing
+        context = format_ontology_results_for_llm(results)
+        
+        # Send to generation agent
+        await self.send_message("generation_agent", {
+            "action": "generate_response",
+            "query": query,
+            "context": context,
+            "operation_id": operation_id
+        })
+        
+        # No response yet, wait for generation
+        return None
+    else:
+        # Send results directly to requester
+        return {
+            "recipient": operation["requester"],
+            "content": {
+                "action": "search_response",
+                "status": "success",
+                "query": query,
+                "results": results
+            }
+        }
+
+def format_ontology_results_for_llm(results):
+    """
+    Format ontology results for the LLM.
+    
+    Args:
+        results: List of ontology query results
+        
+    Returns:
+        Formatted context string
+    """
+    context = []
+    
+    for result in results:
+        result_type = result.get("type", "")
+        
+        if result_type == "cocktail_with_ingredient":
+            context.append(f"Cocktail {result.get('cocktail', '')} contains {result.get('ingredient', '')}.")
+        elif result_type == "ingredient_in_cocktail":
+            context.append(f"{result.get('cocktail', '')} contains {result.get('ingredient', '')}.")
+        elif result_type == "glass_for_cocktail":
+            context.append(f"{result.get('cocktail', '')} is served in a {result.get('glass', '')}.")
+        elif result_type == "method_for_cocktail":
+            context.append(f"{result.get('cocktail', '')} is prepared by {result.get('method', '')}.")
+        elif result_type == "cocktail_description":
+            context.append(f"{result.get('cocktail', '')}: {result.get('description', '')}")
+        elif result_type == "general_match":
+            context.append(f"{result.get('subject', '')} {result.get('predicate', '')} {result.get('object', '')}.")
+    
+    return "\n".join(context)
