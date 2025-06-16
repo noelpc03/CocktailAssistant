@@ -17,7 +17,20 @@ if [ ! -f "./ontology/cocktail_ontology.owl" ]; then
 fi
 
 echo "Iniciando la aplicación web..."
-streamlit run app.py
+# Asegurarse de que estamos en el directorio correcto
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_PATH="${SCRIPT_DIR}/app/app.py"
+
+# Verificar si el archivo app.py existe en la ruta especificada
+if [ -f "$APP_PATH" ]; then
+    echo "Ejecutando aplicación desde: $APP_PATH"
+    # Establecemos el directorio de trabajo como la raíz del proyecto
+    cd "$SCRIPT_DIR"
+    streamlit run "$APP_PATH"
+else
+    echo "ERROR: No se encuentra el archivo app.py en $APP_PATH"
+    exit 1
+fi
 
 # En caso de error
 if [ $? -ne 0 ]; then

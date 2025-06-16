@@ -12,6 +12,7 @@ numpy>=1.19.5
 # Utilities
 tqdm>=4.60.0
 python-dotenv>=0.17.1
+Pillow>=9.0.0  # Para manejo de imágenes (redimensionado del logo)
 
 # LLM Integration
 huggingface_hub>=0.19.0
@@ -22,4 +23,4 @@ owlrl>=5.2.3
 graphviz>=0.20.1
 
 # Web Interface
-streamlit>=1.24.0 
+streamlit>=1.24.0
