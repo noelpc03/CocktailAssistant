@@ -43,9 +43,8 @@
     "show_scores": true
   },
   "generation_agent": {
-    "model": "accounts/fireworks/models/mixtral-8x22b-instruct",
+    "model": "mistral-medium",
     "temperature": 0.4,
-    "top_k": 32,
     "top_p": 0.95,
     "max_output_tokens": 2048
   },
@@ -56,7 +55,7 @@
     "batch_size": 3
   },
   "strategy_agent": {
-    "model": "accounts/fireworks/models/mixtral-8x22b-instruct",
+    "model": "mistral-medium",
     "temperature": 0.1
   }
 }

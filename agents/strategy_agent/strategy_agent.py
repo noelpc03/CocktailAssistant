@@ -5,7 +5,7 @@ import os
 import logging
 from typing import Dict, Any, List, Tuple
 import json
-import requests
+import asyncio
 
 from agents.common.agent_interface import Agent
 from agents.common.config_manager import ConfigManager
@@ -29,10 +29,10 @@ class StrategyAgent(Agent):
         self.data_store = DataStore()
         
         # LLM configuration
-        self.model_name = self.config.get("model", "accounts/fireworks/models/mixtral-8x22b-instruct")
+        self.model_name = self.config.get("model", "mistral-medium")  # Modelos disponibles: mistral-tiny, mistral-small, mistral-medium
         self.temperature = self.config.get("temperature", 0.1)  # Low temperature for more deterministic responses
-        self.api_url = "https://api.fireworks.ai/inference/v1/chat/completions"
         self.api_key = None
+        self.client = None
         
         # Cache de decisiones para consultas similares
         self.decision_cache = {}
@@ -50,16 +50,23 @@ class StrategyAgent(Agent):
             logger.error(f"Strategy agent {self.agent_id} started but failed to load API key")
     
     def _load_api_key(self):
-        """Load API key from file"""
+        """Load API key from file for Mistral AI API"""
         try:
+            # Cargar la API key
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             token_file = os.path.join(project_root, "tokenHuggingFace.txt")
             with open(token_file, 'r') as f:
                 self.api_key = f.read().strip()
                 logger.info("API key loaded successfully")
+                
+            # Configurar el cliente como activo (usaremos requests directamente)
+            self.client = True  # Marcamos como inicializado
+            logger.info("API connection ready for Mistral AI")
+                
         except Exception as e:
             logger.error(f"Failed to load API key: {e}")
             self.api_key = None
+            self.client = None
     
     async def process_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -121,10 +128,10 @@ class StrategyAgent(Agent):
         if query in self.decision_cache:
             return self.decision_cache[query]
         
-        if not self.api_key:
-            logger.warning("No API key available, falling back to embeddings approach")
-            logger.error(f"[StrategyAgent] ERROR: API key no disponible. ¿Se llamó al método start() para cargarla?")
-            return "embedding", "API key not available for LLM decision"
+        if not self.api_key or not self.client:
+            logger.warning("No API key or Mistral client available, falling back to embeddings approach")
+            logger.error(f"[StrategyAgent] ERROR: API key o cliente Mistral no disponible. ¿Se llamó al método start() para cargarla?")
+            return "embedding", "API key or Mistral client not available for LLM decision"
         
         try:
             # Construct prompt for strategy decision
@@ -145,50 +152,44 @@ class StrategyAgent(Agent):
             - "strategy": "ontology" o "embedding"
             - "explanation": breve explicación de tu decisión (máximo 2 líneas)
             """
-            
-            payload = {
-                "model": self.model_name,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Consulta del usuario: {query}"}
-                ],
-                "temperature": self.temperature,
-                "top_p": 0.95,
-                "max_tokens": 150
-            }
+            # Usar un formato de mensaje estándar para APIs de chat
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Consulta del usuario: {query}"}
+            ]
+            # Configurar la solicitud para la API de Mistral
+            import requests
             
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}"
             }
             
-            logger.info(f"Sending strategy determination request to LLM for query: '{query}'")
-            logger.info(f"[StrategyAgent] Enviando petición a API URL: {self.api_url}")
-            logger.info(f"[StrategyAgent] Auth header: Bearer {self.api_key[:4]}...")
+            # URL de la API de Mistral
+            api_url = "https://api.mistral.ai/v1/chat/completions"
             
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)  # Timeout de 30 segundos
-            status_code = response.status_code
-            logger.info(f"[StrategyAgent] API response status code: {status_code}")
+            # Preparar el payload según la documentación de Mistral AI
+            payload = {
+                "model": self.model_name,
+                "messages": messages,
+                "temperature": self.temperature,
+                "top_p": 0.95,
+                "max_tokens": 150,
+                "safe_prompt": True
+            }
             
-            if status_code != 200:
-                logger.error(f"[StrategyAgent] Error en la respuesta: {response.text[:200]}...")
+            logger.info(f"Enviando petición a Mistral AI para determinar estrategia para: '{query}'")
+            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
             
+            # Verificar la respuesta
             response.raise_for_status()
-            
             result = response.json()
-            logger.info(f"[StrategyAgent] LLM response (resumido): {str(result)[:200]}...")
-            logger.debug(f"LLM response: {result}")
-            
-            # Extract the assistant's message content
-            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            
+            content = result["choices"][0]["message"]["content"]
+            logger.info(f"Respuesta de Mistral AI: {content}")
             try:
-                # Parse JSON response
                 decision = json.loads(content)
                 strategy = decision.get("strategy", "embedding").lower()
                 explanation = decision.get("explanation", "No explanation provided")
-                
-                # Validate strategy
                 if strategy not in ["ontology", "embedding"]:
                     logger.warning(f"Invalid strategy '{strategy}' from LLM, defaulting to embedding")
                     strategy = "embedding"
@@ -197,15 +198,10 @@ class StrategyAgent(Agent):
                 logger.warning(f"Failed to parse LLM response: {e}, defaulting to embedding approach")
                 strategy = "embedding"
                 explanation = "Default to embedding due to LLM response parsing error"
-            
-            # Cache the decision
             self.decision_cache[query] = (strategy, explanation)
-            
             logger.info(f"[StrategyAgent] Determinada estrategia: {strategy} para la consulta '{query}'")
             logger.info(f"[StrategyAgent] Explicación: {explanation}")
-            
             return strategy, explanation
-        
         except Exception as e:
             logger.error(f"Error determining strategy: {e}")
             return "embedding", f"Error determining strategy, defaulting to embedding approach"

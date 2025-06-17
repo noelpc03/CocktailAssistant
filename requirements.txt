@@ -1,5 +1,5 @@
-# Web crawling & scraping
-requests>=2.25.0
+# Web crawling & scraping and API requests
+requests>=2.25.0  # Para APIs y crawling
 beautifulsoup4>=4.9.3
 
 # Embeddings & ML
@@ -16,6 +16,7 @@ Pillow>=9.0.0  # Para manejo de imágenes (redimensionado del logo)
 
 # LLM Integration
 huggingface_hub>=0.19.0
+# Nota: No necesitamos la biblioteca mistralai, usamos requests directamente
 
 # Ontology Management
 rdflib>=6.0.0

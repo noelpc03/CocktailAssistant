@@ -4,8 +4,8 @@ Generation agent responsible for generating responses using an LLM.
 import os
 import logging
 from typing import Dict, Any, List
-import requests
 import json
+import asyncio
 
 from agents.common.agent_interface import Agent
 from agents.common.config_manager import ConfigManager
@@ -27,19 +27,16 @@ class GenerationAgent(Agent):
         super().__init__(agent_id, config)
         self.config = config or ConfigManager().get_agent_config("generation_agent")
         self.data_store = DataStore()
-        # Configuración para Fireworks AI
-        self.model_name = self.config.get("model", "accounts/fireworks/models/mixtral-8x22b-instruct")
+        # Configuración para Mistral AI
+        self.model_name = self.config.get("model", "mistral-medium")  # Modelos disponibles: mistral-tiny, mistral-small, mistral-medium
         self.temperature = self.config.get("temperature", 0.6)
-        self.top_k = self.config.get("top_k", 32)
         self.top_p = self.config.get("top_p", 0.95)
         self.max_output_tokens = self.config.get("max_output_tokens", 512)
         
         # API key will be loaded from file at runtime
         self.api_key = None
-        self.model = None
-        
-        # URL de la API de Fireworks (compatible con OpenAI)
-        self.api_url = "https://api.fireworks.ai/inference/v1/chat/completions"
+        self.client = None
+        self.model = None  # Indicador de si el modelo está inicializado
         
     async def start(self) -> None:
         """Start the generation agent"""
@@ -122,7 +119,7 @@ class GenerationAgent(Agent):
     
     def _initialize_model(self, api_key_path: str = None) -> bool:
         """
-        Initialize the Fireworks AI model connection.
+        Initialize the Mistral AI model connection.
         
         Args:
             api_key_path: Path to API key file
@@ -158,12 +155,17 @@ class GenerationAgent(Agent):
                 logger.error("No API key available")
                 return False
                 
-            # Para Fireworks AI, simplemente verificamos que la clave API esté disponible
+            # Para la API de Mistral, simplemente verificamos que la clave API esté disponible
             # La conexión real se hace en cada solicitud
+            self.client = True  # Marcamos como inicializado
             self.model = True
             
-            logger.info(f"Model {self.model_name} connection initialized successfully using Fireworks AI API")
+            logger.info(f"Model {self.model_name} connection initialized successfully using Mistral AI API")
             return True
+            
+        except Exception as e:
+            logger.error(f"Error initializing model connection: {e}")
+            return False
             
         except Exception as e:
             logger.error(f"Error initializing model connection: {e}")
@@ -251,7 +253,7 @@ Información de referencia:
     
     async def generate_response(self, query: str, search_results: List[Dict[str, Any]], api_key_path: str = None) -> str:
         """
-        Generate a response using the LLM with Fireworks AI API.
+        Generate a response using the LLM with Mistral AI API.
         
         Args:
             query: User query
@@ -273,35 +275,36 @@ Información de referencia:
             prompt = self._build_prompt(query, search_results)
             
             try:
-                # Preparar la solicitud para la API de Fireworks
+                import requests
+                
+                # Crear el mensaje para Mistral AI
+                messages = [{"role": "user", "content": prompt}]
+                
+                # Configurar la solicitud para la API de Mistral
                 headers = {
-                    "Accept": "application/json",
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}"
                 }
                 
-                # Formatear el prompt como un mensaje de chat
+                # URL de la API de Mistral
+                api_url = "https://api.mistral.ai/v1/chat/completions"
+                
+                # Preparar el payload según la documentación de Mistral AI
                 payload = {
                     "model": self.model_name,
-                    "messages": [
-                        {"role": "user", "content": prompt}
-                    ],
+                    "messages": messages,
                     "temperature": self.temperature,
                     "top_p": self.top_p,
                     "max_tokens": self.max_output_tokens,
-                    "stream": False
+                    "safe_prompt": True
                 }
                 
                 # Realizar la solicitud a la API con timeout
-                response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+                response = requests.post(api_url, headers=headers, json=payload, timeout=30)
                 response.raise_for_status()  # Lanzar excepción si hay error HTTP
                 
-                # Procesar la respuesta
+                # Convertir la respuesta a JSON
                 response_data = response.json()
-                
-                if "choices" not in response_data or not response_data["choices"]:
-                    logger.error(f"Respuesta de API inesperada: {response_data}")
-                    return "Lo siento, el servicio de IA no proporcionó una respuesta válida."
                 
                 # Extraer el texto generado
                 generated_text = response_data["choices"][0]["message"]["content"]
@@ -320,16 +323,13 @@ Información de referencia:
                 # Return generated text
                 return generated_text
                 
+            except ImportError as import_error:
+                logger.error(f"Error importing required dependencies: {import_error}")
+                return f"Lo siento, ocurrió un error con las dependencias requeridas: {str(import_error)}"
+                
             except Exception as api_error:
                 logger.error(f"API request error: {api_error}")
-                error_details = ""
-                if hasattr(api_error, 'response') and api_error.response:
-                    try:
-                        error_details = f" - Detalles: {api_error.response.json()}"
-                    except:
-                        error_details = f" - Código de estado: {api_error.response.status_code}"
-                
-                return f"Lo siento, ocurrió un error al generar la respuesta con la API de Fireworks AI: {str(api_error)}{error_details}"
+                return f"Lo siento, ocurrió un error al generar la respuesta con la API de Mistral AI: {str(api_error)}"
                 
         except Exception as e:
             logger.error(f"Error generating response: {e}")
