@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Simple Cocktail Recipe",
+    "query": "How do I make a Mojito?"
+  },
+  {
+    "name": "Ingredient Information",
+    "query": "What is Campari used for?"
+  },
+  {
+    "name": "Cocktail Technique",
+    "query": "What is the difference between shaking and stirring a cocktail?"
+  },
+  {
+    "name": "Whiskey Based",
+    "query": "Give me a recipe for an Old Fashioned"
+  },
+  {
+    "name": "Non-alcoholic Option",
+    "query": "What are some popular non-alcoholic cocktails?"
+  },
+  {
+    "name": "Gin Based",
+    "query": "What cocktails can I make with gin and tonic?"
+  },
+  {
+    "name": "Rum Based",
+    "query": "Can you recommend some rum-based tropical drinks?"
+  },
+  {
+    "name": "Vodka Based",
+    "query": "What are classic vodka cocktails?"
+  },
+  {
+    "name": "Technical Question",
+    "query": "How long should I shake a cocktail with egg whites?"
+  },
+  {
+    "name": "Unusual Search",
+    "query": "What are some cocktails with unusual ingredients like bacon or wasabi?"
+  }
+]
