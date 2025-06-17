@@ -3,15 +3,17 @@ Coordinator agent responsible for orchestrating the multi-agent system.
 """
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import os
 import json
 
 from agents.common.agent_interface import Agent
 from agents.coordinator_agent.handle_ontology_results import handle_ontology_results, format_ontology_results_for_llm
+from agents.coordinator_agent.verify_and_enhance_response import verify_and_enhance_response
 from agents.common.config_manager import ConfigManager
 from agents.common.data_store import DataStore
 from agents.common.message_broker import MessageBroker
+from agents.dynamic_crawler.dynamic_crawler import DynamicCrawler
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,9 @@ class CoordinatorAgent(Agent):
         self.data_store = DataStore()
         self.message_broker = MessageBroker()
         self.timeout = self.config.get("timeout", 120)  # Increased timeout to 120 seconds
+        
+        # Initialize dynamic crawler
+        self.dynamic_crawler = DynamicCrawler()
         
         # Track active operations
         self.active_operations = {}
@@ -141,8 +146,9 @@ class CoordinatorAgent(Agent):
             strategy = content.get("strategy", "embedding")  # Default to embedding if not specified
             explanation = content.get("explanation", "")
             operation_id = content.get("operation_id", "")
+            needs_dynamic_crawling = content.get("needs_dynamic_crawling", False)  # New field for dynamic crawling
             
-            logger.info(f"Strategy determined for query '{query}': {strategy} - {explanation}")
+            logger.info(f"Strategy determined for query '{query}': {strategy} - {explanation}, needs_dynamic_crawling: {needs_dynamic_crawling}")
             
             if not operation_id or operation_id not in self.active_operations:
                 logger.warning(f"Invalid operation ID received from strategy agent: {operation_id}")
@@ -151,6 +157,7 @@ class CoordinatorAgent(Agent):
             # Update operation with strategy info
             self.active_operations[operation_id]["strategy"] = strategy
             self.active_operations[operation_id]["strategy_explanation"] = explanation
+            self.active_operations[operation_id]["needs_dynamic_crawling"] = needs_dynamic_crawling
             
             # Depending on the strategy, send to appropriate agent
             if strategy == "ontology":
@@ -220,24 +227,39 @@ class CoordinatorAgent(Agent):
             # Results from generation agent
             query = content.get("query", "")
             response = content.get("response", "")
+            operation_id = content.get("operation_id", "")
+            # Get the needs_dynamic_crawling flag if it exists
+            needs_dynamic_crawling = content.get("needs_dynamic_crawling", False)
             
             # Find the operation
             operation = None
-            operation_id = None
-            for op_id, op in self.active_operations.items():
-                if op["type"] == "search" and op["query"] == query:
-                    operation = op
-                    operation_id = op_id
-                    break
+            if operation_id and operation_id in self.active_operations:
+                operation = self.active_operations[operation_id]
+                # Update the operation with the dynamic crawler flag if it came from the generation agent
+                if needs_dynamic_crawling:
+                    self.active_operations[operation_id]["needs_dynamic_crawling"] = True
+            else:
+                # Fallback to finding by query
+                for op_id, op in self.active_operations.items():
+                    if op["type"] == "search" and op["query"] == query:
+                        operation = op
+                        operation_id = op_id
+                        # Update the operation with the dynamic crawler flag
+                        if needs_dynamic_crawling:
+                            self.active_operations[op_id]["needs_dynamic_crawling"] = True
+                        break
             
             if not operation:
                 # No matching operation found
                 return None
-                
+            
+            # Check if we need to enhance the response with dynamic web crawling
+            enhanced_response = await verify_and_enhance_response(self, query, response, operation_id)
+            
             # Update operation status
             self.active_operations[operation_id]["status"] = "completed"
             
-            # Send only the response to requester, not the search results
+            # Send the possibly enhanced response to requester, not the search results
             return {
                 "recipient": operation["requester"],
                 "content": {
@@ -245,7 +267,7 @@ class CoordinatorAgent(Agent):
                     "status": "success",
                     "query": query,
                     "results": [],  # No enviamos los resultados de búsqueda
-                    "generated_response": response
+                    "generated_response": enhanced_response
                 }
             }
             
@@ -510,9 +532,74 @@ class CoordinatorAgent(Agent):
                 result = await asyncio.wait_for(future, self.timeout)
                 return result
             except asyncio.TimeoutError:
+                logger.warning(f"Search operation timed out after {self.timeout}s")
+                print(f"[Coordinator] ⚠️ La operación de búsqueda excedió el tiempo límite ({self.timeout}s)")
+                
+                # Intentar usar crawler dinámico como último recurso para la consulta actual
+                print(f"[Coordinator] Intentando usar crawler dinámico como último recurso...")
+                
+                # Intentar obtener una respuesta con el crawler dinámico directamente
+                try:
+                    # Extraer la consulta del contexto local
+                    user_query = ""
+                    # En este punto no tenemos acceso directo a la consulta original pero podemos intentar
+                    # buscar en las operaciones activas alguna que esté en progreso
+                    for op_id, op_data in self.active_operations.items():
+                        if op_data.get("status") == "in_progress" and op_data.get("type") == "search":
+                            user_query = op_data.get("query", "")
+                            break
+                    
+                    if user_query:
+                        logger.info(f"Intentando usar crawler dinámico para query: '{user_query}'")
+                        print(f"[Coordinator] Intentando obtener respuesta desde crawler dinámico para: '{user_query}'")
+                        
+                        # Buscar información web directamente con manejo de errores detallado
+                        # Todo el código del crawler en un solo bloque try/except
+                        search_results = self.dynamic_crawler.search_web(user_query, 3)
+                        if not search_results:
+                            logger.warning("El crawler dinámico no encontró resultados de búsqueda")
+                            print(f"[Coordinator] El crawler dinámico no encontró resultados de búsqueda")
+                            raise Exception("No se encontraron resultados de búsqueda")
+                            
+                        logger.info(f"Crawler encontró {len(search_results)} resultados")
+                        print(f"[Coordinator] Crawler encontró {len(search_results)} resultados, extrayendo información...")
+                        
+                        web_info = self.dynamic_crawler.extract_relevant_info(user_query, search_results)
+                        if not web_info:
+                            logger.warning("No se pudo extraer información relevante")
+                            print(f"[Coordinator] No se pudo extraer información relevante de los resultados")
+                            raise Exception("No se pudo extraer información relevante")
+                            
+                        logger.info(f"Generando respuesta desde cero con {len(web_info)} caracteres de información")
+                        print(f"[Coordinator] Generando respuesta a partir de la información obtenida...")
+                        
+                        response = self.dynamic_crawler.generate_response_from_scratch(user_query, web_info)
+                        if response:
+                            return {
+                                "status": "success",
+                                "generated_response": response,
+                                "message": "Respuesta obtenida del crawler dinámico después de un timeout"
+                            }
+                except Exception as e:
+                    logger.error(f"Error al intentar usar crawler dinámico como último recurso: {e}")
+                    print(f"[Coordinator] ❌ Error específico del crawler dinámico: {str(e)}")
+                    
+                    # Intentar obtener algún diagnóstico del error
+                    error_msg = f"Error usando crawler dinámico: {str(e)}"
+                    error_type = type(e).__name__
+                    if "API" in str(e).upper() or "token" in str(e).lower() or "key" in str(e).lower():
+                        error_msg = "Error de API: Verifica que la clave API para el LLM esté configurada correctamente."
+                    elif "connection" in str(e).lower() or "timeout" in str(e).lower():
+                        error_msg = "Error de conexión: Verifica la conexión a internet o si el servicio está disponible."
+                    elif "import" in str(e).lower() or "module" in str(e).lower():
+                        error_msg = "Error de importación: Asegúrate de que todas las dependencias estén instaladas."
+                    
+                    print(f"[Coordinator] Tipo de error: {error_type}. {error_msg}")
+                
+                # Si todo lo anterior falla, devolver mensaje de error más detallado
                 return {
                     "status": "error",
-                    "message": "Search timed out"
+                    "message": "La búsqueda excedió el tiempo límite y no se pudo obtener respuesta usando el crawler dinámico. Verifica la conexión a internet y los tokens de API."
                 }
             finally:
                 # Unsubscribe
@@ -738,3 +825,6 @@ class CoordinatorAgent(Agent):
             Response message or None
         """
         return await handle_ontology_results(self, content, message)
+    
+    # Function moved to verify_and_enhance_response.py for better organization
+    # and to add timeouts for crawler operations

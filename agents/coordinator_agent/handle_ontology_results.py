@@ -19,7 +19,11 @@ async def handle_ontology_results(self, content, message):
     query = content.get("query", "")
     results = content.get("results", [])
     operation_id = content.get("operation_id", "")
+    error = content.get("error", None)  # Verificar si hay error en la consulta
     
+    if error:
+        logger.warning(f"Error en consulta ontológica para '{query}': {error}")
+        
     logger.info(f"Handling ontology results for query: {query}")
     
     # Find the operation
@@ -38,6 +42,48 @@ async def handle_ontology_results(self, content, message):
         # No matching operation found
         logger.warning(f"No operation found for ontology results with ID {operation_id}")
         return None
+    
+    # Si hay error o no hay resultados, activar crawler dinámico
+    # Verificar si hay un error específico o si los resultados están vacíos
+    if error or not results or (isinstance(results, list) and len(results) == 0):
+        logger.info(f"La consulta a la ontología falló o retornó vacía. Activando crawler dinámico para '{query}'")
+        
+        # Determinar si el error es de sintaxis SPARQL
+        is_syntax_error = False
+        error_details = ""
+        if error:
+            error_lower = error.lower() if isinstance(error, str) else ""
+            syntax_keywords = ["syntax", "parse", "expected", "found", "sparql", "unterminated", "error"]
+            is_syntax_error = any(keyword in error_lower for keyword in syntax_keywords)
+            error_details = f"Error en consulta ontológica: {error}"
+            
+            # Log específico para errores de sintaxis SPARQL
+            if is_syntax_error:
+                logger.warning(f"Error de sintaxis SPARQL detectado: {error}. Activando crawler dinámico como plan de contingencia.")
+                print(f"[Coordinator] Error de sintaxis SPARQL detectado. Activando crawler dinámico como fallback.")
+        
+        # Forzar uso de crawler dinámico independientemente del tipo de error
+        operation["needs_dynamic_crawling"] = True
+        operation["ontology_failed"] = True  # Marcar explícitamente que la ontología falló
+        
+        # Para problemas con cockteles específicos conocidos, agregamos una nota para facilitar debugging
+        if "aperol" in query.lower() or "spritz" in query.lower():
+            logger.info(f"Detectada consulta sobre Aperol Spritz. Este es un caso conocido con posibles problemas sintácticos.")
+            print(f"[Coordinator] Detectada consulta sobre Aperol Spritz. Usando crawler dinámico para obtener información confiable.")
+        
+        # Enviar una respuesta al generation_agent para que active el crawler dinámico
+        if operation.get("use_llm", True):
+            await self.send_message("generation_agent", {
+                "action": "generate_response",
+                "query": query,
+                "context": error_details if error else "No se encontraron resultados en la ontología.",
+                "operation_id": operation_id,
+                "needs_dynamic_crawling": True,  # Explícitamente indicar que necesita crawler dinámico
+                "ontology_failed": True,  # Marcar que la ontología falló
+                "search_results": []  # Resultados vacíos
+            })
+            logger.info(f"Enviada solicitud a generation_agent para activar crawler dinámico para '{query}'")
+            return None
     
     # Update operation status
     self.active_operations[operation_id]["status"] = "completed"

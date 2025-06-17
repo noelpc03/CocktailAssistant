@@ -3,7 +3,7 @@ Strategy agent responsible for choosing between embeddings and ontology approach
 """
 import os
 import logging
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Union
 import json
 import asyncio
 
@@ -87,7 +87,7 @@ class StrategyAgent(Agent):
             
             # Process the query to determine the best strategy
             logger.info(f"[StrategyAgent] Determinando estrategia para '{query}' (op_id: {operation_id})")
-            strategy, explanation = await self._determine_strategy(query)
+            strategy, needs_dynamic_crawling, explanation = await self._determine_strategy(query)
             
             sender = message.get("sender") or "coordinator_agent"  # Si no hay 'sender', usar coordinator_agent
             logger.info(f"[StrategyAgent] Preparando respuesta para enviar a {sender} (op_id: {operation_id})")
@@ -98,6 +98,7 @@ class StrategyAgent(Agent):
                     "operation_id": operation_id,
                     "strategy": strategy,
                     "explanation": explanation,
+                    "needs_dynamic_crawling": needs_dynamic_crawling,
                     "query": query
                 }
             }
@@ -114,15 +115,16 @@ class StrategyAgent(Agent):
                 }
             }
     
-    async def _determine_strategy(self, query: str) -> Tuple[str, str]:
+    async def _determine_strategy(self, query: str) -> Tuple[str, bool]:
         """
         Determine the best strategy to use for a given query.
         
         Args:
             query: The user's search query
-            
+        
         Returns:
-            A tuple of (strategy, explanation) where strategy is either "embedding" or "ontology"
+            A tuple of (strategy, needs_dynamic_crawling) where strategy is either "embedding" or "ontology"
+            and needs_dynamic_crawling is a boolean indicating if dynamic web crawling is needed
         """
         # Check if we have a cached decision for this query
         if query in self.decision_cache:
@@ -131,32 +133,49 @@ class StrategyAgent(Agent):
         if not self.api_key or not self.client:
             logger.warning("No API key or Mistral client available, falling back to embeddings approach")
             logger.error(f"[StrategyAgent] ERROR: API key o cliente Mistral no disponible. ¿Se llamó al método start() para cargarla?")
-            return "embedding", "API key or Mistral client not available for LLM decision"
+            return "embedding", False
         
         try:
-            # Construct prompt for strategy decision
+            # Construct prompt for strategy decision with dynamic crawling evaluation
             system_prompt = """
-            Tu tarea es determinar qué enfoque de búsqueda es más adecuado para una consulta dada:
+            Tu tarea es determinar la mejor estrategia para responder a una consulta sobre cócteles:
             
-            1. Búsqueda basada en ONTOLOGÍA: Ideal para consultas estructuradas, definiciones, 
-               relaciones explícitas, clasificaciones y cuando se necesita precisión en dominios específicos.
-               Ejemplos: "¿Qué es un Manhattan?", "¿A qué categoría pertenece el Martini?", 
-               "¿Qué cócteles usan ginebra como base?"
+            1. Selecciona un método de búsqueda:
+               - ONTOLOGÍA: Ideal para consultas estructuradas, definiciones, 
+                 relaciones explícitas, clasificaciones específicas sobre cócteles.
+                 Ejemplos: "¿Qué es un Manhattan?", "¿A qué categoría pertenece el Martini?", 
+                 "¿Qué cócteles usan ginebra como base?"
                
-            2. Búsqueda basada en EMBEDDINGS: Ideal para similitud semántica, consultas en lenguaje natural, 
-               recomendaciones, y cuando se buscan conceptos relacionados sin una estructura formal.
-               Ejemplos: "¿Cómo preparar un cóctel refrescante?", "Cócteles similares al Mojito", 
-               "Bebidas para una fiesta de verano"
+               - EMBEDDING: Ideal para similitud semántica, consultas en lenguaje natural, 
+                 recomendaciones, y cuando se buscan conceptos relacionados sin una estructura formal.
+                 Ejemplos: "¿Cómo preparar un cóctel refrescante?", "Cócteles similares al Mojito",
+                 "Bebidas para una fiesta de verano"
+                 
+               - IMPORTANTE: Usa EMBEDDING para consultas sobre información temporal como "cócteles creados en el siglo XXI"
+                 o "cócteles populares en los años 90", ya que la ontología puede no tener esta información estructurada.
             
-            Responde en formato JSON con dos campos:
+            2. Decide si se necesita información web dinámica:
+               - CRAWL: Si la consulta probablemente requiere información muy reciente, cócteles raros,
+                 información temporal (como cócteles creados en cierta época), o información que podría 
+                 no estar en una base de datos estándar de cócteles.
+                 
+               - SIEMPRE usa CRAWL para consultas sobre información temporal o histórica como:
+                 "cócteles creados en el siglo XXI", "cócteles más populares del 2023", etc.
+                 
+               - NO_CRAWL: Si la consulta puede responderse con conocimientos estándar sobre cócteles.
+            
+            Responde en formato JSON con tres campos:
             - "strategy": "ontology" o "embedding"
+            - "crawl": true o false
             - "explanation": breve explicación de tu decisión (máximo 2 líneas)
             """
+            
             # Usar un formato de mensaje estándar para APIs de chat
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Consulta del usuario: {query}"}
             ]
+            
             # Configurar la solicitud para la API de Mistral
             import requests
             
@@ -186,25 +205,46 @@ class StrategyAgent(Agent):
             result = response.json()
             content = result["choices"][0]["message"]["content"]
             logger.info(f"Respuesta de Mistral AI: {content}")
+            
+            # Intentar analizar la respuesta JSON
             try:
                 decision = json.loads(content)
                 strategy = decision.get("strategy", "embedding").lower()
+                needs_crawling = decision.get("crawl", False)
                 explanation = decision.get("explanation", "No explanation provided")
+                
+                # Validar strategy
                 if strategy not in ["ontology", "embedding"]:
                     logger.warning(f"Invalid strategy '{strategy}' from LLM, defaulting to embedding")
                     strategy = "embedding"
-                    explanation = "Default to embedding due to invalid LLM response"
-            except Exception as e:
-                logger.warning(f"Failed to parse LLM response: {e}, defaulting to embedding approach")
+                
+                logger.info(f"[StrategyAgent] Determinada estrategia: {strategy} (crawling: {needs_crawling}) para la consulta '{query}'")
+                logger.info(f"[StrategyAgent] Explicación: {explanation}")
+                
+                # Cachear la decisión
+                self.decision_cache[query] = (strategy, needs_crawling, explanation)
+                
+                return strategy, needs_crawling, explanation
+            
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse LLM response as JSON, defaulting to embedding approach without crawling")
+                # Intentar extraer la estrategia y decisión de crawling del texto
+                content_lower = content.lower()
+                
                 strategy = "embedding"
-                explanation = "Default to embedding due to LLM response parsing error"
-            self.decision_cache[query] = (strategy, explanation)
-            logger.info(f"[StrategyAgent] Determinada estrategia: {strategy} para la consulta '{query}'")
-            logger.info(f"[StrategyAgent] Explicación: {explanation}")
-            return strategy, explanation
+                if "ontology" in content_lower:
+                    strategy = "ontology"
+                
+                needs_crawling = "crawl" in content_lower and "true" in content_lower
+                
+                explanation = "Extracted from non-JSON response"
+                self.decision_cache[query] = (strategy, needs_crawling, explanation)
+                
+                return strategy, needs_crawling, explanation
+                
         except Exception as e:
             logger.error(f"Error determining strategy: {e}")
-            return "embedding", f"Error determining strategy, defaulting to embedding approach"
+            return "embedding", False, "Error determining strategy"
     
     async def fallback_strategy(self) -> Tuple[str, str]:
         """
@@ -214,3 +254,19 @@ class StrategyAgent(Agent):
             A tuple of (strategy, explanation) with the default fallback strategy
         """
         return "embedding", "Fallback to embedding approach"
+    
+    async def determine_strategy(self, query: str) -> Tuple[str, bool, str]:
+        """
+        Public method to determine the best strategy for answering the query.
+        
+        Args:
+            query: The user's query
+            
+        Returns:
+            A tuple of (strategy, needs_dynamic_crawling, explanation)
+        """
+        try:
+            return await self._determine_strategy(query)
+        except Exception as e:
+            logger.error(f"Error in determine_strategy: {e}")
+            return "embedding", False, "Error determining strategy, using embedding as fallback"

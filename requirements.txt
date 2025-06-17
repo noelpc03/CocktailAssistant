@@ -1,6 +1,7 @@
 # Web crawling & scraping and API requests
 requests>=2.25.0  # Para APIs y crawling
 beautifulsoup4>=4.9.3
+duckduckgo_search>=4.1.0  # Para búsquedas web dinámicas
 
 # Embeddings & ML
 transformers>=4.5.0

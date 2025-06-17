@@ -60,6 +60,9 @@ class GenerationAgent(Agent):
             query = content.get("query", "")
             search_results = content.get("search_results", [])
             api_key_path = content.get("api_key_path")
+            operation_id = content.get("operation_id", "")
+            # Check if dynamic crawling is needed (propagated from coordinator)
+            needs_dynamic_crawling = content.get("needs_dynamic_crawling", False)
             
             # Validate inputs
             if not query:
@@ -68,7 +71,9 @@ class GenerationAgent(Agent):
                     "content": {
                         "action": "generation_results",
                         "status": "error",
-                        "message": "Empty query"
+                        "message": "Empty query",
+                        "operation_id": operation_id,
+                        "needs_dynamic_crawling": needs_dynamic_crawling
                     }
                 }
                 
@@ -87,7 +92,9 @@ class GenerationAgent(Agent):
                     "status": "success" if response else "error",
                     "query": query,
                     "response": response,
-                    "references": len(search_results)
+                    "references": len(search_results),
+                    "operation_id": operation_id,
+                    "needs_dynamic_crawling": needs_dynamic_crawling
                 }
             }
             
