@@ -1,42 +1,152 @@
 [
   {
-    "name": "Simple Cocktail Recipe",
-    "query": "How do I make a Mojito?"
+    "name": "Embedding_1",
+    "query": "¿Cuáles son los ingredientes del Negroni?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Ingredient Information",
-    "query": "What is Campari used for?"
+    "name": "Embedding_2",
+    "query": "¿Cómo se prepara un Martini clásico?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Cocktail Technique",
-    "query": "What is the difference between shaking and stirring a cocktail?"
+    "name": "Embedding_3",
+    "query": "¿Qué tipo de vaso se usa para un Manhattan?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Whiskey Based",
-    "query": "Give me a recipe for an Old Fashioned"
+    "name": "Embedding_4",
+    "query": "¿Cuál es la proporción de ron en un Daiquiri?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Non-alcoholic Option",
-    "query": "What are some popular non-alcoholic cocktails?"
+    "name": "Embedding_5",
+    "query": "¿Qué es un Espresso Martini y cómo se hace?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Gin Based",
-    "query": "What cocktails can I make with gin and tonic?"
+    "name": "Embedding_6",
+    "query": "¿Qué hace único al Paper Plane cocktail?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Rum Based",
-    "query": "Can you recommend some rum-based tropical drinks?"
+    "name": "Embedding_7",
+    "query": "¿Cuál es la diferencia entre un Tommy's Margarita y una Margarita tradicional?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Vodka Based",
-    "query": "What are classic vodka cocktails?"
+    "name": "Embedding_8",
+    "query": "¿Qué ingredientes lleva un Penicillin cocktail?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Technical Question",
-    "query": "How long should I shake a cocktail with egg whites?"
+    "name": "Embedding_9",
+    "query": "¿Cuáles son las variaciones del Martini?",
+    "expectedStrategy": "embedding"
   },
   {
-    "name": "Unusual Search",
-    "query": "What are some cocktails with unusual ingredients like bacon or wasabi?"
+    "name": "Embedding_10",
+    "query": "¿Qué caracteriza a un buen Negroni?",
+    "expectedStrategy": "embedding"
+  },
+  {
+    "name": "Ontology_1",
+    "query": "¿Qué cócteles llevan gin como base?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_2",
+    "query": "¿Cuáles son los cócteles amargos en la lista?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_3",
+    "query": "¿Qué bebidas comparten ingredientes con el Negroni?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_4",
+    "query": "¿Qué cócteles se hacen con whisky?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_5",
+    "query": "¿Cuáles son los cócteles que se sirven en copa de Martini?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_6",
+    "query": "¿Qué bebidas son consideradas aperitivos?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_7",
+    "query": "¿Qué cócteles tienen menos de 4 ingredientes?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_8",
+    "query": "¿Cuáles son los cócteles más antiguos en la lista?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_9",
+    "query": "¿Qué bebidas podrían gustarme si me gusta el Daiquiri?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Ontology_10",
+    "query": "¿Qué cócteles tienen una preparación similar al Manhattan?",
+    "expectedStrategy": "ontology"
+  },
+  {
+    "name": "Crawler_1",
+    "query": "¿Cómo se prepara un Old Fashioned?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_2",
+    "query": "¿Cuál es el origen del Mojito?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_3",
+    "query": "¿Cómo hacer un Cosmopolitan en casa?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_4",
+    "query": "¿Cuál es el mejor whisky para un Penicillin?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_5",
+    "query": "¿Quién inventó el Manhattan cocktail?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_6",
+    "query": "¿Cuáles son las últimas tendencias en cócteles 2023?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_7",
+    "query": "¿Cuál es la historia del Bloody Mary?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_8",
+    "query": "¿Qué significa 'dirty' en un Martini?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_9",
+    "query": "¿Cómo afecta la edad del tequila a su sabor?",
+    "expectedStrategy": "crawler"
+  },
+  {
+    "name": "Crawler_10",
+    "query": "¿Por qué se usa coca-cola en tantos cócteles?",
+    "expectedStrategy": "crawler"
   }
 ]

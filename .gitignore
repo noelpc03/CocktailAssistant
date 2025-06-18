@@ -14,3 +14,15 @@ crawl_debug_output.log
 ontology
 agent_system_output.log
 results
+informe.aux
+informe.bbl
+informe.blg
+informe.log
+informe.out
+informe.fdb_latexmk
+informe.fls
+informe.synctex.gz
+llncs.cls
+splncs03.bst
+informe.synctex(busy)
+agent_system.sh

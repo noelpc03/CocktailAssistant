@@ -1,199 +1,35 @@
 
-# Sistema de Recuperación de Información Multiagente para Bartenders
+# Cocktail Assistant: Sistema de Recuperación de Información Multiagente para Bartenders
 
-Un sistema avanzado de recuperación de información y generación de respuestas basado en una arquitectura multiagente.
+## Autores
+- Amalia Beatriz Valiente Hinojosa C312
+- Jorge Alejandro Echevarr´ıa Brunet C312
+- Rodrigo Mederos Gonz´alez C311 
+- Noel P´erez Calvo C311
 
 ## Descripción
 
-Este proyecto implementa un sistema de recuperación de información especializado en coctelería y bartenders. Utiliza una arquitectura multiagente donde cada componente del sistema funciona como un agente autónomo que coopera con los demás a través de mensajes.
+El proyecto implementa un sistema de recuperación de información especializado en el dominio de bartender, implementado mediante una arquitectura multiagente alineada con el modelo Retrieve-Augmented Generation (RAG). El sistema integra diversos componentes que incluyen: procesamiento de lenguaje natural para la interpretación de consultas y generación de respuestas, técnicas metaheurísticas para optimizar la recuperación de información, representación del conocimiento mediante una ontología especializada, y un crawler automatizado para la recopilación y actualización dinámica de datos.
+ 
+## Requerimientos
+- Python 3.9
+- Conexión a Internet para el proceso de crawling y uso de APIs externas
+- Instalación de las bibliotecas de requirements.txt
+- Token de Mistral
 
-## Arquitectura Multiagente
+## API's
+- Mistral
+- DuckDuckGo-Search 
 
-El sistema está compuesto por los siguientes agentes:
-
-### 1. Agente Coordinador (Coordinator Agent)
-
--**Función**: Orquestar la comunicación entre todos los agentes
-
--**Responsabilidades**: Inicializar el sistema, dirigir las solicitudes a los agentes apropiados, coordinar el flujo de trabajo
-
-### 2. Agente de Recolección (Crawler Agent)
-
--**Función**: Extraer información de páginas web
-
--**Responsabilidades**: Realizar crawling BFS (Breadth-First Search) de páginas web sobre cócteles, partiendo de URLs semilla, obtener contenido relevante, limpiar y estructurar la información
-
--**Características del Crawler BFS**:
-  - Utiliza algoritmo de búsqueda en amplitud (BFS) para explorar páginas web
-  - Comienza desde URLs semilla específicas sobre cócteles
-  - Control de profundidad máxima para limitar la exploración
-  - Extracción de enlaces y normalización de URLs
-  - Prevención de bucles mediante registro de URLs ya visitadas
-
-### 3. Agente de Vectorización (Vectorizer Agent)
-
--**Función**: Convertir documentos de texto a embeddings vectoriales
-
--**Responsabilidades**: Dividir documentos en fragmentos, generar embeddings utilizando modelos de transformers
-
-### 4. Agente de Recuperación (Retrieval Agent)
-
--**Función**: Almacenar y recuperar vectores de documentos
-
--**Responsabilidades**: Mantener un índice FAISS, realizar búsquedas por similitud de vectores
-
-### 5. Agente de Búsqueda (Search Agent)
-
--**Función**: Procesar consultas y formatear resultados
-
--**Responsabilidades**: Vectorizar consultas, formatear resultados para presentación al usuario
-
-### 6. Agente de Generación (Generation Agent)
-
--**Función**: Generar respuestas utilizando modelos de lenguaje
-
--**Responsabilidades**: Integrar con Mixtral, construir prompts con el contexto relevante
-
-## Requisitos
-
-- Python 3.9+
-- Bibliotecas requeridas en `requirements.txt`
-
-## Instalación
-
-1. Clonar el repositorio:
-
+## Instalacion de requisitos
 ```bash
-
-gitclone [URL_DEL_REPOSITORIO]
-
-cdia-sri-sim
-
+pip install -r requirements.txt
 ```
-
-2. Instalar dependencias:
-
+## Recuperación de información
 ```bash
-
-pipinstall-rrequirements.txt
-
+./crawl_and_extract.sh
 ```
-
-3. Configurar la API key para Hugging Face:
-
-- Crear un archivo `tokenHuggingFace.txt` en la raíz del proyecto con la API key de Hugging Face
-- Puedes obtener una API key gratuita en [Hugging Face](https://huggingface.co/settings/tokens)
-- Para probar tu conexión, ejecuta el siguiente script:
-
+## Iniciar el proyecto con interfaz web
 ```bash
-python test_huggingface_connection.py
+./startup.sh
 ```
-
-## Uso
-
-### Comandos del Sistema
-
-#### Ejecutar el sistema completo con búsqueda inteligente (Agente de Decisión)
-
-```bash
-./agent_system.sh search "¿Cómo preparar un Martini?"
-```
-
-#### Iniciar el proceso de crawling y indexación
-
-```bash
-./agent_system.sh crawl --urls "https://www.url1.com" "https://www.url2.com"
-```
-Si no se especifican URLs, se utilizarán las predeterminadas del archivo de configuración.
-
-#### Extraer la ontología de los documentos indexados
-
-```bash
-./agent_system.sh extract_ontology
-```
-o
-```bash
-./agent_system.sh ontology extract
-```
-
-#### Consultar la ontología con lenguaje natural
-
-```bash
-./agent_system.sh ontology query "¿Qué cócteles llevan vodka?"
-```
-
-### Interfaz Gráfica
-
-Para iniciar la interfaz gráfica web:
-
-```bash
-./run_app.sh
-```
-
-La interfaz web permite realizar búsquedas utilizando el Agente de Decisión, que selecciona automáticamente la mejor estrategia de búsqueda combinando embeddings y ontología.
-
-#### Recomendación:
-Antes de usar la interfaz gráfica, asegúrate de haber ejecutado:
-
-1. El proceso de crawling: `./agent_system.sh crawl`
-2. La extracción de ontología: `./agent_system.sh extract_ontology`
-
-Esto garantiza que el sistema tenga suficiente información para responder consultas.
-
-## Configuración
-
-La configuración del sistema se encuentra en `agents/config.json`. Aquí se pueden modificar:
-
-- URLs predeterminadas para crawling
-- Modelo de embeddings utilizado
-- Número máximo de resultados
-- Parámetros del modelo de generación
-- Otros parámetros de cada agente
-
-## Estructura del Proyecto
-
-```
-
-agents/
-
-├── common/              # Componentes compartidos entre agentes
-
-│   ├── agent_interface.py   # Interfaz base para todos los agentes
-
-│   ├── message_broker.py    # Sistema de mensajería
-
-│   ├── data_store.py        # Almacén de datos compartido
-
-│   └── config_manager.py    # Gestor de configuración
-
-├── coordinator_agent/   # Agente coordinador
-
-├── crawler_agent/       # Agente de recolección
-
-├── vectorizer_agent/    # Agente de vectorización
-
-├── retrieval_agent/     # Agente de recuperación
-
-├── search_agent/        # Agente de búsqueda
-
-├── generation_agent/    # Agente de generación
-
-└── data/                # Datos generados por los agentes
-
-    └── embeddings/      # Embeddings vectoriales almacenados
-
-```
-
-## Comunicación entre Agentes
-
-Los agentes se comunican a través de un broker de mensajes centralizado. Cada agente puede enviar y recibir mensajes, y el broker se encarga de entregar los mensajes a los destinatarios correctos. La comunicación es asíncrona, lo que permite operaciones paralelas y mayor eficiencia.
-
-## Extensibilidad
-
-El sistema está diseñado para ser fácilmente extensible:
-
--**Nuevos Agentes**: Se pueden añadir nuevos agentes implementando la interfaz `Agent`
-
--**Nuevos Modelos**: Se pueden integrar diferentes modelos de embeddings o LLMs
-
--**Nuevas Fuentes**: Se pueden añadir más fuentes de información al crawler
