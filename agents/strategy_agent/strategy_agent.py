@@ -91,12 +91,30 @@ class StrategyAgent(Agent):
             
             sender = message.get("sender") or "coordinator_agent"  # Si no hay 'sender', usar coordinator_agent
             logger.info(f"[StrategyAgent] Preparando respuesta para enviar a {sender} (op_id: {operation_id})")
+            
+            # Si se requiere información dinámica, activar el crawler dinámico inmediatamente
+            if needs_dynamic_crawling:
+                logger.info(f"[StrategyAgent] Activando crawler dinámico para '{query}' (op_id: {operation_id})")
+                try:
+                    # Enviar solicitud al crawler dinámico primero
+                    await self.send_message("dynamic_crawler_agent", {
+                        "action": "search_web",
+                        "query": query,
+                        "operation_id": operation_id,
+                        "source": "strategy",
+                        "callback_agent": "coordinator_agent"  # Siempre enviar resultados al coordinador
+                    })
+                    logger.info(f"[StrategyAgent] Mensaje enviado correctamente al crawler dinámico")
+                except Exception as e:
+                    logger.error(f"[StrategyAgent] Error al enviar mensaje al crawler dinámico: {e}")
+            
             response = {
                 "recipient": sender,
                 "content": {
                     "action": "strategy_response",
                     "operation_id": operation_id,
                     "strategy": strategy,
+                    "skip_embedding_search": needs_dynamic_crawling,  # Indica al coordinador si debe omitir la búsqueda por embeddings
                     "explanation": explanation,
                     "needs_dynamic_crawling": needs_dynamic_crawling,
                     "query": query
@@ -138,38 +156,62 @@ class StrategyAgent(Agent):
         try:
             # Construct prompt for strategy decision with dynamic crawling evaluation
             system_prompt = """
-            Tu tarea es determinar la mejor estrategia para responder a una consulta sobre cócteles:
-            
-            1. Selecciona un método de búsqueda:
-               - ONTOLOGÍA: Ideal para consultas estructuradas, definiciones, 
-                 relaciones explícitas, clasificaciones específicas sobre cócteles.
-                 Ejemplos: "¿Qué es un Manhattan?", "¿A qué categoría pertenece el Martini?", 
-                 "¿Qué cócteles usan ginebra como base?"
-               
-               - EMBEDDING: Ideal para similitud semántica, consultas en lenguaje natural, 
-                 recomendaciones, y cuando se buscan conceptos relacionados sin una estructura formal.
-                 Ejemplos: "¿Cómo preparar un cóctel refrescante?", "Cócteles similares al Mojito",
-                 "Bebidas para una fiesta de verano"
-                 
-               - IMPORTANTE: Usa EMBEDDING para consultas sobre información temporal como "cócteles creados en el siglo XXI"
-                 o "cócteles populares en los años 90", ya que la ontología puede no tener esta información estructurada.
-            
-            2. Decide si se necesita información web dinámica:
-               - CRAWL: Si la consulta probablemente requiere información muy reciente, cócteles raros,
-                 información temporal (como cócteles creados en cierta época), o información que podría 
-                 no estar en una base de datos estándar de cócteles.
-                 
-               - SIEMPRE usa CRAWL para consultas sobre información temporal o histórica como:
-                 "cócteles creados en el siglo XXI", "cócteles más populares del 2023", etc.
-                 
-               - NO_CRAWL: Si la consulta puede responderse con conocimientos estándar sobre cócteles.
-            
-            Responde en formato JSON con tres campos:
-            - "strategy": "ontology" o "embedding"
-            - "crawl": true o false
-            - "explanation": breve explicación de tu decisión (máximo 2 líneas)
+            Tu tarea es determinar la mejor estrategia para responder a una consulta sobre cócteles.
+
+            Sigue este procedimiento paso a paso:
+
+            ### Paso 1: Analiza la intención de la consulta
+            Clasifica la consulta según su tipo:
+
+            - (1) Estructurada: definición breve, clasificación, taxonomía, relaciones explícitas o elementos concretos (ingredientes, utensilios, categorías). 
+              Ej.: “¿Qué ingredientes lleva el Negroni?”, “¿Qué categoría es el Bloody Mary?”
+              ⚠️ No consideres como estructurada una consulta que busca historia o explicaciones narrativas, aunque sea concreta.
+
+            - (2) Semántica general: recomendaciones, lenguaje subjetivo, comparaciones o conceptos similares. 
+              Ej.: “¿Qué cócteles son parecidos al Mojito?”, “Cócteles para una cita romántica”
+
+            - (3) Temporal o dinámica: información reciente, tendencias, eventos actuales, novedades o que varía en el tiempo. 
+              Ej.: “Cócteles populares en 2024”, “Tendencias actuales en mixología”
+
+            ### Paso 2: Selecciona el método de búsqueda
+
+            - Usa `"ontology"` solo si la pregunta es estructurada (tipo 1), y requiere información factual, categorizada o relacional. 
+              No uses `"ontology"` para temas narrativos o explicativos como historia, aunque sean consultas concretas.
+
+            - Usa `"embedding"` si la consulta es semántica (tipo 2), subjetiva, ambigua, en lenguaje libre, busca explicaciones narrativas o términos similares.
+              Ejemplos:
+              - “¿Qué hace único al Paper Plane?”
+              - “Historia de la Coca-Cola”
+              - “Cócteles como el Mojito”
+
+            Si hay ambigüedad entre estructurada y semántica, **elige embedding** como alternativa segura.
+
+            ### Paso 3: Decide si se necesita información de la web en tiempo real (`crawl`)
+
+            - Usa `"crawl": true` **solo si**:
+              - La consulta menciona años, décadas, siglos o términos como: “nuevos”, “recientes”, “actualmente”, “últimas tendencias”, “creados en…”
+              - Se trata de temas que cambian en el tiempo o no suelen estar en una base de conocimiento estática (por ejemplo, rankings, lanzamientos, modas)
+
+              Ejemplos:
+              - “¿Cuáles son las últimas tendencias en cócteles?”
+              - “Cócteles populares en 2023”
+              - “Nuevos cócteles con gin en 2024”
+
+            - Usa `"crawl": false` si:
+              - La consulta trata sobre historia general, preparación, categorías o conocimientos que pueden estar almacenados en la base local (aunque históricos)
+              - La información es estática o ampliamente conocida
+
+             **No actives el crawler solo por tratarse de una pregunta histórica si no se requiere actualización reciente**
+
+            ### Responde únicamente en formato JSON:
+
+            {
+              "strategy": "ontology" | "embedding",
+              "crawl": true | false,
+              "explanation": "Máximo 2 líneas explicando tu decisión"
+            }
             """
-            
+
             # Usar un formato de mensaje estándar para APIs de chat
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -208,7 +250,16 @@ class StrategyAgent(Agent):
             
             # Intentar analizar la respuesta JSON
             try:
-                decision = json.loads(content)
+                # Limpiar la respuesta de marcadores de formato
+                cleaned_content = content
+                
+                # Eliminar marcadores de código comunes
+                for marker in ["```json", "```"]:
+                    cleaned_content = cleaned_content.replace(marker, "")
+                
+                cleaned_content = cleaned_content.strip()
+                
+                decision = json.loads(cleaned_content)
                 strategy = decision.get("strategy", "embedding").lower()
                 needs_crawling = decision.get("crawl", False)
                 explanation = decision.get("explanation", "No explanation provided")

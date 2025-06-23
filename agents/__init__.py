@@ -10,5 +10,6 @@ from agents.generation_agent.generation_agent import GenerationAgent
 from agents.ontology_agent.ontology_agent import OntologyAgent
 from agents.strategy_agent.strategy_agent import StrategyAgent
 from agents.coordinator_agent.coordinator_agent import CoordinatorAgent
+from agents.dynamic_crawler_agent.dynamic_crawler_agent import DynamicCrawlerAgent
 from agents.common.message_broker import MessageBroker
 from agents.common.config_manager import ConfigManager

@@ -479,7 +479,7 @@ class CrawlerAgent(Agent):
                 loop = asyncio.get_running_loop()
                 response = await loop.run_in_executor(
                     None, 
-                    lambda: requests.get(url, headers=headers, timeout=30)
+                    lambda: requests.get(url, headers=headers, timeout=120)  
                 )
                 
                 if response.status_code == 200:

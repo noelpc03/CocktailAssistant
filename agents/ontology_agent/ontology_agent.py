@@ -13,7 +13,6 @@ from rdflib.namespace import RDF, RDFS, OWL, XSD
 from agents.common.agent_interface import Agent
 from agents.common.config_manager import ConfigManager
 from agents.common.data_store import DataStore
-from agents.ontology_agent.extract_sparql import extract_sparql_from_response
 
 logger = logging.getLogger(__name__)
 
@@ -458,154 +457,7 @@ Margarita, servedIn, MargaritaGlass
 
 Solo devuelve las tripletas, sin texto adicional.
 """
-        
-    def _build_sparql_generation_prompt(self, query: str) -> str:
-        """
-        Build a prompt for generating SPARQL from natural language with improved bilingual support.
-        
-        Args:
-            query: Natural language query (in English or Spanish)
-            
-        Returns:
-            Formatted prompt
-        """
-        # Get namespace info for the prompt
-        namespaces = []
-        for prefix, namespace in self.graph.namespaces():
-            namespaces.append(f"PREFIX {prefix}: <{namespace}>")
-        
-        # Join namespace info
-        namespace_text = "\n".join(namespaces)
-        
-        return f"""Por favor, convierte la siguiente consulta en lenguaje natural a una consulta SPARQL válida.
-Utiliza los siguientes prefijos para la ontología:
-
-{namespace_text}
-
-La ontología tiene las siguientes clases principales:
-- cocktail:Cocktail - Representa cócteles
-- cocktail:Ingredient - Representa ingredientes
-- cocktail:Glass - Representa tipos de vasos
-- cocktail:Method - Representa métodos de preparación
-
-Y las siguientes propiedades principales:
-- property:hasIngredient - Relaciona un cóctel con sus ingredientes
-- property:servedIn - Relaciona un cóctel con el tipo de vaso
-- property:preparedBy - Relaciona un cóctel con el método de preparación
-- property:alcoholContent - El contenido de alcohol de un cóctel
-- property:description - Descripción de un cóctel
-
-SISTEMA ONTOLÓGICO DE CÓCTELES BILINGÜE - DIRECTRICES ESENCIALES:
-
-1) NOMENCLATURA Y FORMATO DE ENTIDADES:
-   - NOMBRES DE CÓCTELES:
-     * SIEMPRE en formato PascalCase sin espacios
-     * MANTENER el IDIOMA ORIGINAL del nombre (español o inglés)
-     * Ejemplos: 
-        - "Tinto de Verano" → cocktail:TintoDeVerano (no traducir a SummerRed)
-        - "Bloody Mary" → cocktail:BloodyMary 
-        - "Piña Colada" → cocktail:PiñaColada (conservar acentos)
-        - "Margarita" → cocktail:Margarita
-
-   - INGREDIENTES Y TÉRMINOS TÉCNICOS:
-     * SIEMPRE en INGLÉS con PascalCase para términos compuestos
-     * Ejemplos: 
-        - "vino"/"wine" → ingredient:Wine
-        - "vino tinto"/"red wine" → ingredient:RedWine 
-        - "jugo de naranja"/"zumo de naranja"/"orange juice" → ingredient:OrangeJuice
-
-   - VASOS Y MÉTODOS:
-     * SIEMPRE en INGLÉS con PascalCase para términos compuestos
-     * Ejemplos:
-        - "copa alta"/"vaso alto"/"highball glass" → glass:HighballGlass
-        - "agitado"/"shaken" → method:Shaken
-
-2) PATRONES DE CONSULTA ROBUSTOS:
-   - BÚSQUEDAS POR NOMBRE:
-     * Utiliza FILTER con CONTAINS/REGEX y LCASE para flexibilidad:
-        FILTER(CONTAINS(LCASE(STR(?cocktail)), LCASE("tintoDeVerano")))
-   
-   - INGREDIENTES Y PROPIEDADES:
-     * Siempre comprueba ambas formas de capitalización:
-     {{
-       ?cocktail property:hasIngredient ingredient:Wine .
-     }} 
-     UNION 
-     {{
-       ?cocktail property:hasIngredient ingredient:wine .
-     }}
-
-   - CÓCTELES ESPECÍFICOS POR NOMBRE:
-     * Para cócteles españoles, buscar directamente por URI:
-       ?cocktail = cocktail:TintoDeVerano .
-     * Para nombres ambiguos, usar FILTER con contains para capturar variantes:
-       FILTER(CONTAINS(LCASE(STR(?cocktail)), "tinto"))
-
-3) PROYECCIÓN Y PRESENTACIÓN:
-   - Usa REPLACE para extraer nombres limpios sin prefijos:
-     BIND(REPLACE(STR(?cocktail), "^.*#", "") AS ?nombre)
-   
-   - Extrae componentes identificables:
-     BIND(REPLACE(STR(?ingredient), "^.*#", "") AS ?ingredientName)
-
-4) MANEJO DE RESULTADOS:
-   - Siempre limita resultados para evitar sobrecarga: LIMIT 25
-   - Usa ORDER BY para ordenar resultados
-   - Para múltiples valores, agrúpalos con GROUP_CONCAT:
-     GROUP_CONCAT(DISTINCT ?ingredientName; separator=", ") AS ?ingredients
-
-Consulta en lenguaje natural: "{query}"
-
-Genera una consulta SPARQL que responda a esta pregunta de la manera más precisa posible.
-RECUERDA: esta ontología requiere PascalCase para TODOS los términos compuestos (ingredientes, vasos, métodos).
-Los nombres de cócteles mantienen su idioma original pero con formato PascalCase (TintoDeVerano, BloodyMary).
-
-Asegúrate de devolver la consulta SPARQL completa dentro de bloques de código, como en el siguiente ejemplo:
-
-```sparql
-PREFIX cocktail: <http://www.semanticweb.org/cocktail/ontology#>
-PREFIX property: <http://www.semanticweb.org/cocktail/property#>
-PREFIX ingredient: <http://www.semanticweb.org/cocktail/ingredient#>
-PREFIX glass: <http://www.semanticweb.org/cocktail/glass#>
-PREFIX method: <http://www.semanticweb.org/cocktail/method#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-
-SELECT ?cocktail (REPLACE(STR(?cocktail), "^.*#", "") AS ?nombre) 
-       (GROUP_CONCAT(DISTINCT ?ingredientName; separator=", ") AS ?ingredients)
-WHERE {{
-  # Patrón básico para encontrar cócteles
-  ?cocktail rdf:type cocktail:Cocktail .
-  
-  # Búsqueda flexible por nombre de cóctel (ejemplo)
-  # FILTER(CONTAINS(LCASE(STR(?cocktail)), "tinto"))
-  
-  # O referencia directa a un cóctel específico
-  # ?cocktail = cocktail:TintoDeVerano .
-  
-  # Ingredientes (con unión para diferentes capitalizaciones)
-  ?cocktail property:hasIngredient ?ingredient .
-  
-  # Para filtrar por un ingrediente específico
-  {{
-    ?cocktail property:hasIngredient ingredient:Wine .
-  }} 
-  UNION 
-  {{
-    # Búsqueda alternativa con CONTAINS para flexibilidad
-    ?cocktail property:hasIngredient ?ing .
-    FILTER(CONTAINS(LCASE(STR(?ing)), "wine"))
-  }}
-  
-  # Extracción de nombres legibles
-  BIND(REPLACE(STR(?ingredient), "^.*#", "") AS ?ingredientName)
-}}
-GROUP BY ?cocktail
-ORDER BY ?nombre
-LIMIT 25
-```
-"""
-        
+               
     def _parse_triples(self, llm_response: str) -> List[Dict[str, Any]]:
         """
         Parse triples from LLM response.
@@ -873,10 +725,314 @@ LIMIT 25
             logger.info(f"Applied reasoning: inferred {inferred_triples} new triples")
         except Exception as e:
             logger.error(f"Error applying reasoning: {e}")
+        
+        # Procesar cada propiedad de datos
 
+
+    # El método process_message se ha movido al archivo process_message.py
+        
+    def generate_visualization(self, format: str = "png") -> str:
+        """
+        Generate a visualization of the ontology.
+        
+        Args:
+            format: Format to save the visualization in
+            
+        Returns:
+            Path to the visualization file
+        """
+        try:
+            from .generate_visualization import generate_ontology_visualization
+            
+            # Base filename for visualization
+            visualization_base = os.path.join(self.ontology_dir, "ontology_visualization")
+            
+            # Generate visualization
+            visualization_file = generate_ontology_visualization(
+                self.graph, 
+                self.ontology_dir, 
+                filename="ontology_visualization", 
+                format=format
+            )
+            
+            if visualization_file:
+                logger.info(f"Generated ontology visualization: {visualization_file}")
+            else:
+                logger.error("Failed to generate ontology visualization")
+                
+            return visualization_file
+            
+        except Exception as e:
+            logger.error(f"Error generating visualization: {e}")
+            return ""
+        
+    def generate_ontology_schema(self) -> Dict[str, Any]:
+        """
+        Analiza la estructura de la ontología y genera un esquema utilizando métodos nativos de RDFlib.
+        El esquema incluye clases, propiedades de objeto, propiedades de datos y relaciones entre clases.
+        
+        Returns:
+            Diccionario con el esquema de la ontología
+        """
+        import datetime
+        
+        schema = {
+            "classes": [],
+            "objectProperties": [],
+            "dataProperties": [],
+            "classRelations": [],
+            "statistics": {
+                "totalTriples": len(self.graph),
+                "generatedAt": datetime.datetime.now().isoformat()
+            }
+        }
+        
+        # Extraer clases
+        classes = set()
+        for subject in self.graph.subjects(RDF.type, OWL.Class):
+            classes.add(subject)
+        
+        for subject in self.graph.subjects(RDF.type, RDFS.Class):
+            classes.add(subject)
+        
+        # También buscar clases que no estén explícitamente declaradas
+        for _, _, obj in self.graph.triples((None, RDF.type, None)):
+            if obj != OWL.Class and obj != RDFS.Class and obj != OWL.ObjectProperty and obj != OWL.DatatypeProperty:
+                classes.add(obj)
+        
+        # Procesar cada clase
+        for cls in classes:
+            class_uri = str(cls)
+            class_name = class_uri.split('#')[-1] if '#' in class_uri else class_uri.split('/')[-1]
+            
+            # Obtener etiqueta y comentarios
+            label = None
+            for lbl in self.graph.objects(cls, RDFS.label):
+                label = str(lbl)
+                break
+                
+            comment = None
+            for cmt in self.graph.objects(cls, RDFS.comment):
+                comment = str(cmt)
+                break
+                
+            # Obtener superclases
+            superclasses = []
+            for parent in self.graph.objects(cls, RDFS.subClassOf):
+                parent_uri = str(parent)
+                parent_name = parent_uri.split('#')[-1] if '#' in parent_uri else parent_uri.split('/')[-1]
+                superclasses.append(parent_name)
+                
+            # Obtener subclases
+            subclasses = []
+            for child in self.graph.subjects(RDFS.subClassOf, cls):
+                child_uri = str(child)
+                child_name = child_uri.split('#')[-1] if '#' in child_uri else child_uri.split('/')[-1]
+                subclasses.append(child_name)
+                
+            schema["classes"].append({
+                "name": class_name,
+                "uri": class_uri,
+                "label": label or class_name,
+                "description": comment or "",
+                "superClasses": superclasses,
+                "subClasses": subclasses
+            })
+        
+        # Extraer propiedades de objeto
+        for prop in self.graph.subjects(RDF.type, OWL.ObjectProperty):
+            prop_uri = str(prop)
+            prop_name = prop_uri.split('#')[-1] if '#' in prop_uri else prop_uri.split('/')[-1]
+            
+            # Obtener etiqueta y comentarios
+            label = None
+            for lbl in self.graph.objects(prop, RDFS.label):
+                label = str(lbl)
+                break
+                
+            comment = None
+            for cmt in self.graph.objects(prop, RDFS.comment):
+                comment = str(cmt)
+                break
+                
+            # Obtener dominio y rango
+            domains = []
+            for domain in self.graph.objects(prop, RDFS.domain):
+                domain_name = domain.split('#')[-1] if '#' in domain else domain.split('/')[-1]
+                domains.append(domain_name)
+                
+            ranges = []
+            for range_val in self.graph.objects(prop, RDFS.range):
+                range_name = range_val.split('#')[-1] if '#' in range_val else range_val.split('/')[-1]
+                ranges.append(range_name)
+                
+            schema["objectProperties"].append({
+                "name": prop_name,
+                "uri": prop_uri,
+                "label": label or prop_name,
+                "description": comment or "",
+                "domains": domains,
+                "ranges": ranges
+            })
+        
+        # Extraer propiedades de datos
+        for prop in self.graph.subjects(RDF.type, OWL.DatatypeProperty):
+            prop_uri = str(prop)
+            prop_name = prop_uri.split('#')[-1] if '#' in prop_uri else prop_uri.split('/')[-1]
+            
+            # Obtener etiqueta y comentarios
+            label = None
+            for lbl in self.graph.objects(prop, RDFS.label):
+                label = str(lbl)
+                break
+                
+            comment = None
+            for cmt in self.graph.objects(prop, RDFS.comment):
+                comment = str(cmt)
+                break
+                
+            # Obtener dominio y rango
+            domains = []
+            for domain in self.graph.objects(prop, RDFS.domain):
+                domain_name = domain.split('#')[-1] if '#' in domain else domain.split('/')[-1]
+                domains.append(domain_name)
+                
+            ranges = []
+            for range_val in self.graph.objects(prop, RDFS.range):
+                range_name = range_val.split('#')[-1] if '#' in range_val else range_val.split('/')[-1]
+                ranges.append(range_name)
+                
+            schema["dataProperties"].append({
+                "name": prop_name,
+                "uri": prop_uri,
+                "label": label or prop_name,
+                "description": comment or "",
+                "domains": domains,
+                "ranges": ranges
+            })
+        
+        # Extraer relaciones entre clases a partir de las propiedades de objeto
+        for prop in self.graph.subjects(RDF.type, OWL.ObjectProperty):
+            domains = list(self.graph.objects(prop, RDFS.domain))
+            ranges = list(self.graph.objects(prop, RDFS.range))
+            
+            if domains and ranges:
+                for domain in domains:
+                    for range_val in ranges:
+                        schema["classRelations"].append({
+                            "from": domain.split('#')[-1],
+                            "to": range_val.split('#')[-1],
+                            "property": str(prop).split('#')[-1]
+                        })
+        
+        # Añadir algunas estadísticas adicionales
+        schema["statistics"].update({
+            "classCount": len(schema["classes"]),
+            "objectPropertyCount": len(schema["objectProperties"]),
+            "dataPropertyCount": len(schema["dataProperties"]),
+            "relationCount": len(schema["classRelations"])
+        })
+        
+        # Guardar el esquema en un archivo
+        schema_file = os.path.join(self.ontology_dir, "ontology_schema.json")
+        with open(schema_file, 'w', encoding='utf-8') as f:
+            json.dump(schema, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Generated ontology schema with {len(schema['classes'])} classes, " +
+                   f"{len(schema['objectProperties'])} object properties, " +
+                   f"{len(schema['dataProperties'])} data properties")
+        
+        return schema
+
+    # Implementación de procesamiento de consultas en lenguaje natural
+    async def process_query(self, query_text: str, language: str = None) -> Dict[str, Any]:
+        """
+        Process a natural language query against the ontology.
+        
+        Args:
+            query_text: The natural language query
+            language: Optional language code ('es' or 'en'), will be auto-detected if not provided
+            
+        Returns:
+            Dictionary with query results and natural language answer
+        """
+        from agents.ontology_agent.ontology_query import OntologyQuerySystem
+        from agents.common.mistral_client import MistralClient
+        
+        # Ensure ontology is loaded
+        if not self._ensure_ontology_loaded():
+            return {
+                "status": "error",
+                "message": "Failed to load ontology",
+                "answer": "No se pudo cargar la ontología para responder a tu pregunta."
+            }
+        
+        try:
+            # Initialize LLM client if needed
+            llm_client = None
+            try:
+                llm_client = MistralClient()
+                logger.info("Initialized Mistral client for ontology query processing")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Mistral client, using basic query processing: {e}")
+            
+            # Initialize the query system
+            query_system = OntologyQuerySystem(ontology_agent=self, llm_client=llm_client)
+            
+            # Process the query
+            response = await query_system.query(query_text)
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error processing ontology query: {e}")
+            return {
+                "status": "error",
+                "message": f"Error: {str(e)}",
+                "answer": "Lo siento, ocurrió un error al procesar tu consulta."
+            }
+    
+    def _ensure_ontology_loaded(self) -> bool:
+        """
+        Asegura que la ontología está cargada o intenta cargarla directamente del directorio principal.
+        Esto ayuda a manejar casos donde la ontología no se cargó correctamente o usa rutas incorrectas.
+        
+        Returns:
+            bool: True si la ontología está correctamente cargada, False en caso contrario
+        """
+        if len(self.graph) < 100:  # Si hay pocas tripletas, la ontología probablemente no está cargada correctamente
+            print(f"[Ontology] La ontología parece estar vacía o casi vacía ({len(self.graph)} tripletas). Intentando cargar directamente...")
+            
+            # Intentar cargar desde la ruta estándar
+            success = self._load_ontology_if_exists()
+            
+            # Si no se pudo cargar, intentar con la ruta alternativa en el directorio raíz del proyecto
+            if not success or len(self.graph) < 100:
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                alt_path = os.path.join(project_root, "ontology", "cocktail_ontology.ttl")
+                
+                if os.path.exists(alt_path):
+                    print(f"[Ontology] Intentando cargar ontología desde ruta alternativa: {alt_path}")
+                    try:
+                        self.graph.parse(alt_path, format="turtle")
+                        print(f"[Ontology] ✓ Ontología cargada desde ruta alternativa con {len(self.graph)} tripletas")
+                        return True
+                    except Exception as e:
+                        print(f"[Ontology] ❌ Error al cargar ontología desde ruta alternativa: {str(e)}")
+                        return False
+                else:
+                    print(f"[Ontology] ❌ No se encontró la ontología en la ruta alternativa: {alt_path}")
+                    return False
+            else:
+                return True
+        else:
+            # La ontología ya está cargada
+            return True
+            
     async def process_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process an incoming message and return a response.
+        Import the actual implementation from process_message module.
         
         Args:
             message: The message to process
@@ -884,10 +1040,9 @@ LIMIT 25
         Returns:
             The response message
         """
-        print(f"[OntologyAgent] Recibido mensaje: {message}")
-        logger.info(f"OntologyAgent received message: {message}")
-        
-        content = message.get("content", {})
+        # Import here to avoid circular imports
+        from agents.ontology_agent.process_message import process_message as process_message_impl
+        return await process_message_impl(self, message)
         action = content.get("action")
         print(f"[OntologyAgent] Procesando acción: {action}")
         
@@ -931,12 +1086,6 @@ LIMIT 25
             
             print(f"[Ontology] Procesando {len(search_results)} documentos en total")
             
-            # Para procesar todos los documentos, comentamos la limitación
-            # max_docs = 1  # Solo 1 documento para pruebas rápidas
-            # if len(search_results) > max_docs:
-            #    print(f"[Ontology] Limitando a {max_docs} documento para evitar timeout")
-            #    search_results = search_results[:max_docs]
-            
             print(f"[Ontology] Procesando TODOS los {len(search_results)} documentos disponibles")
             
             # Extract and process triples
@@ -946,7 +1095,7 @@ LIMIT 25
                     print(f"[Ontology] Continuando extracción con {len(existing_triples)} tripletas existentes")
                     extracted_triples = existing_triples
                     
-                    # Procesar solo documentos nuevos (esto es una simplificación, idealmente deberíamos verificar qué documentos ya han sido procesados)
+                    # Procesar solo documentos nuevos
                     extracted_triples.extend(await self.extract_triples_from_documents(search_results))
                 else:
                     # Comenzar desde cero
@@ -956,23 +1105,14 @@ LIMIT 25
                 print(f"[Ontology] Aplicando razonamiento a {len(extracted_triples)} tripletas")
                 self.apply_reasoning()
                 
+                # Generate ontology schema
+                print(f"[Ontology] Generando esquema de la ontología")
+                schema = self.generate_ontology_schema()
+                print(f"[Ontology] Esquema generado con {len(schema['classes'])} clases, {len(schema['objectProperties'])} propiedades de objeto, y {len(schema['dataProperties'])} propiedades de datos")
+                
                 # Save ontology
                 ontology_file = self.save_ontology()
                 print(f"[Ontology] Ontología guardada en {ontology_file}")
-                
-                response = {
-                    "recipient": message["sender"],
-                    "content": {
-                        "action": "ontology_results",
-                        "operation_id": operation_id,
-                        "status": "success",
-                        "message": f"Ontology extraction completed with {len(extracted_triples)} triples",
-                        "ontology_file": ontology_file,
-                        "triple_count": len(extracted_triples)
-                    }
-                }
-                print(f"[OntologyAgent] Enviando respuesta al remitente: {message['sender']}")
-                logger.info(f"OntologyAgent sending response to {message['sender']} with action=ontology_results")
                 
                 # Asegurarse de que el mensaje tiene toda la información necesaria
                 response = {
@@ -1004,77 +1144,6 @@ LIMIT 25
                         "message": error_message
                     }
                 }
-            
-        elif action == "query_ontology":
-            query = content.get("query", "")
-            operation_id = content.get("operation_id")
-            use_natural_language = content.get("use_natural_language", True)
-            
-            if not query:
-                return {
-                    "recipient": message["sender"],
-                    "content": {
-                        "action": "query_results",
-                        "operation_id": operation_id,
-                        "status": "error",
-                        "message": "Empty query",
-                        "error": "Empty query provided"
-                    }
-                }
-                
-            # Execute query
-            if use_natural_language:
-                results = await self.natural_language_query(query)
-            else:
-                results = self.sparql_query(query)
-                
-            # Check if there's an error in the results
-            error = None
-            if results and any(isinstance(r, dict) and "error" in r for r in results):
-                error_item = next((r for r in results if isinstance(r, dict) and "error" in r), None)
-                if error_item:
-                    error = error_item["error"]
-                    
-            if error:
-                logger.warning(f"Error en consulta ontológica: {error}")
-                return {
-                    "recipient": message["sender"],
-                    "content": {
-                        "action": "query_results",
-                        "operation_id": operation_id,
-                        "status": "error",
-                        "query": query,
-                        "results": results,
-                        "error": error
-                    }
-                }
-            elif not results or len(results) == 0:
-                # También manejar el caso de resultados vacíos como un error
-                logger.warning(f"La consulta a la ontología no retornó resultados: {query}")
-                return {
-                    "recipient": message["sender"],
-                    "content": {
-                        "action": "query_results",
-                        "operation_id": operation_id,
-                        "status": "error",
-                        "query": query,
-                        "results": [],
-                        "error": "No se encontraron resultados en la ontología"
-                    }
-                }
-            else:
-                return {
-                    "recipient": message["sender"],
-                    "content": {
-                        "action": "query_results",
-                        "operation_id": operation_id,
-                        "status": "success",
-                        "query": query,
-                        "results": results,
-                        "error": None
-                    }
-                }
-            
         elif action == "visualize_ontology":
             operation_id = content.get("operation_id")
             
@@ -1101,1502 +1170,14 @@ LIMIT 25
                         "message": "Failed to generate visualization"
                     }
                 }
-        
-        return None
-        
-    def generate_visualization(self, format: str = "png") -> str:
-        """
-        Generate a visualization of the ontology.
-        
-        Args:
-            format: Format to save the visualization in
-            
-        Returns:
-            Path to the visualization file
-        """
-        try:
-            from .generate_visualization import generate_ontology_visualization
-            
-            # Base filename for visualization
-            visualization_base = os.path.join(self.ontology_dir, "ontology_visualization")
-            
-            # Generate visualization
-            visualization_file = generate_ontology_visualization(
-                self.graph, 
-                self.ontology_dir, 
-                filename="ontology_visualization", 
-                format=format
-            )
-            
-            if visualization_file:
-                logger.info(f"Generated ontology visualization: {visualization_file}")
-            else:
-                logger.error("Failed to generate ontology visualization")
-                
-            return visualization_file
-            
-        except Exception as e:
-            logger.error(f"Error generating visualization: {e}")
-            return ""
-        
-    def sparql_query(self, query: str, max_results: int = 10000) -> List[Dict[str, Any]]:
-        """
-        Execute a SPARQL query on the ontology with improved timeout protection.
-        
-        Args:
-            query: SPARQL query string
-            max_results: Maximum number of results to return (default increased to 10000 to return more comprehensive results)
-            
-        Returns:
-            Query results
-        """
-        try:
-            # Primero, realizar una limpieza básica de la consulta
-            query = query.strip()
-            
-            # Log the query being executed
-            logger.info(f"Executing SPARQL query: {query}")
-            print(f"[Ontology] Ejecutando consulta SPARQL: {query[:100]}...")
-            
-            # Execute the query with a timeout
-            results = []
-            start_time = __import__('time').time()
-            
-            # Asegurarse de que la ontología esté cargada correctamente
-            if not self._ensure_ontology_loaded():
-                logger.error("Failed to load ontology, graph is still empty or too small")
-                print(f"[Ontology] ❌ No se pudo cargar la ontología. La ontología parece estar vacía o no existe.")
-                # Informar al usuario de cómo crear la ontología
-                return [{"error": "La ontología no está disponible o está vacía. Ejecute primero './agent_system.sh ontology extract' para crear la ontología."}]
-            else:
-                print(f"[Ontology] ✓ Ontología disponible con {len(self.graph)} tripletas.")
-                logger.info(f"Ontology ready with {len(self.graph)} triples")
-            
-            logger.info(f"Starting query execution on graph with {len(self.graph)} triples...")
-            print(f"[Ontology] Ejecutando consulta en ontología con {len(self.graph)} tripletas...")
-            
-            # Process results in batches to avoid memory issues
-            result_count = 0
-            
-            # Definimos un límite máximo de tiempo para la consulta (10 segundos)
-            max_query_time = 10.0  # segundos
-            timeout_occurred = False
-            
-            # Limpiar cualquier espacio extra en la consulta
-            query = query.strip()
-            
-            # Validar que la consulta SPARQL es correcta sin ser demasiado estrictos
-            if "SELECT" not in query.upper() and "CONSTRUCT" not in query.upper():
-                print(f"[Ontology] ⚠️ La consulta no parece ser válida: {query[:100]}...")
-                return [{"error": "Consulta SPARQL inválida. Debe contener una cláusula SELECT o CONSTRUCT."}]
-            
-            try:
-                # Intentamos ejecutar la consulta directamente
-                print(f"[Ontology] Ejecutando consulta SPARQL directamente...")
-                results_generator = self.graph.query(query)
-                deadline = start_time + max_query_time
-                
-                for row in results_generator:
-                    # Verificar si hemos excedido el tiempo máximo
-                    if __import__('time').time() > deadline:
-                        logger.warning(f"Query processing time exceeded {max_query_time} seconds, stopping")
-                        print(f"[Ontology] ⚠️ Tiempo de consulta excedido ({max_query_time}s), limitando resultados")
-                        timeout_occurred = True
-                        break
-                        
-                    result = {}
-                    
-                    # Convert row to dictionary using a more robust approach
-                    try:
-                        # First try the standard approach with row.vars
-                        for i, var in enumerate(row.vars):
-                            value = row[i]
-                            
-                            # Convert RDFLib types to Python types
-                            if isinstance(value, rdflib.term.URIRef):
-                                # Extraer solo el nombre del recurso para facilitar lectura
-                                uri_str = str(value)
-                                result[var] = uri_str.split('#')[-1] if '#' in uri_str else uri_str
-                            elif isinstance(value, rdflib.term.Literal):
-                                result[var] = str(value)  # Asegurar string para todos los valores
-                            elif isinstance(value, rdflib.term.BNode):
-                                result[var] = f"_:{value}"
-                            else:
-                                result[var] = str(value)
-                    except AttributeError:
-                        # If row.vars fails, try to handle it as a tuple/list with positional values
-                        try:
-                            column_names = results_generator.vars
-                            for i, var in enumerate(column_names):
-                                if i < len(row):
-                                    value = row[i]
-                                    
-                                    # Convert RDFLib types to Python types
-                                    if isinstance(value, rdflib.term.URIRef):
-                                        uri_str = str(value)
-                                        result[var] = uri_str.split('#')[-1] if '#' in uri_str else uri_str
-                                    elif isinstance(value, rdflib.term.Literal):
-                                        result[var] = str(value)
-                                    elif isinstance(value, rdflib.term.BNode):
-                                        result[var] = f"_:{value}"
-                                    else:
-                                        result[var] = str(value)
-                        except (AttributeError, IndexError) as e2:
-                            # Last resort: try to handle it as a single value if only one variable
-                            if len(results_generator.vars) == 1:
-                                var = results_generator.vars[0]
-                                result[var] = str(row)
-                            else:
-                                logger.error(f"Failed to process row: {e2}")
-                                print(f"[Ontology] Error procesando fila: {e2}")
-                                continue
-                    
-                    # Asegurarse de que siempre existan ciertas variables clave
-                    if 'cocktail' in result and 'nombre' not in result:
-                        cocktail_str = str(result['cocktail'])
-                        result['nombre'] = cocktail_str.split('#')[-1] if '#' in cocktail_str else cocktail_str
-                    
-                    results.append(result)
-                    result_count += 1
-                    
-                    # Safety check to prevent excessive result processing
-                    # The limit is set high (10000 by default) to ensure all relevant results are returned
-                    # while still protecting against potential runaway queries
-                    if result_count >= max_results:
-                        logger.warning(f"Query reached maximum result limit of {max_results}")
-                        break
-            
-            except Exception as e:
-                error_message = f"Error durante la ejecución de la consulta: {str(e)}"
-                logger.error(f"Error during SPARQL query execution: {e}")
-                print(f"[Ontology] ❌ {error_message}")
-                
-                # Return error information explicitly
-                return [{"error": error_message}]
-                
-                # Proporcionar una consulta alternativa en caso de error
-                print(f"[Ontology] Intentando consulta alternativa para encontrar cócteles con vodka...")
-                
-                # Consulta simplificada para encontrar cócteles con vodka
-                fallback_query = """
-SELECT ?cocktail ?ingredient
-WHERE {
-  ?cocktail rdf:type cocktail:Cocktail .
-  ?cocktail property:hasIngredient ?ingredient .
-  FILTER(CONTAINS(LCASE(STR(?ingredient)), "vodka"))
-} LIMIT 10
-"""
-                try:
-                    results_generator = self.graph.query(fallback_query)
-                    # Reiniciar el tiempo límite para la consulta fallback
-                    deadline = __import__('time').time() + max_query_time
-                except Exception as e2:
-                    logger.error(f"Error executing fallback SPARQL query: {e2}")
-                    return [{"error": f"Error al ejecutar consulta SPARQL alternativa: {str(e2)}. La ontología podría estar vacía o mal formada."}]
-            
-            end_time = __import__('time').time()
-            query_time = end_time - start_time
-            logger.info(f"Query execution completed in {query_time:.2f} seconds with {len(results)} results")
-            print(f"[Ontology] ✓ Consulta completada en {query_time:.2f}s con {len(results)} resultados")
-            
-            # Add a note if we had to limit results due to timeout
-            if timeout_occurred:
-                results.append({"note": f"La consulta excedió el tiempo máximo de {max_query_time} segundos. Se están mostrando resultados parciales."})
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error executing SPARQL query: {e}")
-            print(f"[Ontology] ❌ Error general en la consulta SPARQL: {str(e)}")
-            return [{"error": str(e)}]
-    
-    def _detect_language(self, text: str) -> str:
-        """
-        Detect if a text is in Spanish or English.
-        
-        Args:
-            text: Text to analyze
-            
-        Returns:
-            Language code: 'es' for Spanish, 'en' for English
-        """
-        # List of common Spanish words
-        spanish_indicators = [
-            'con', 'muéstrame', 'cócteles', 'bebidas', 'contienen', 'tiene', 'puedo', 'hacer', 
-            'ingredientes', 'receta', 'como', 'cuál', 'cuáles', 'qué', 'cuántos', 'dónde', 'cómo',
-            'preparar', 'preparación', 'mezclar', 'además', 'también', 'usando', 'utilizando',
-            'elaborado', 'preparado', 'contenga', 'conteniendo', 'sin', 'puedo', 'quiero', 'necesito'
-        ]
-        
-        # Convert to lowercase for comparison
-        text_lower = text.lower()
-        
-        # Check for Spanish words in the text
-        for word in spanish_indicators:
-            if word in text_lower.split():
-                return 'es'
-                
-        return 'en'
-        
-    async def _generate_nl_response(self, query: str, results: List[Dict[str, Any]]) -> str:
-        """
-        Generate a natural language response for query results using the Generation Agent.
-        
-        Args:
-            query: Original natural language query
-            results: Query results from ontology
-            
-        Returns:
-            Natural language response
-        """
-        try:
-            from agents.generation_agent.generation_agent import GenerationAgent
-            import asyncio
-            
-            print(f"[Ontology] Generando respuesta en lenguaje natural a partir de resultados de búsqueda...")
-            logger.info(f"Generating natural language response from query results")
-            
-            # Create a temporary generation agent
-            generation_agent = GenerationAgent("temp_response_generator")
-            
-            # Detectar si la consulta está en español
-            is_spanish_query = self._detect_language(query) == 'es'
-            
-            # Convert results to a format suitable for the generation prompt
-            search_results = []
-            
-            # Filter out metadata entries like "generated_sparql" and "info"
-            valid_results = [r for r in results if not any(key in r for key in ["generated_sparql", "info", "error"])]
-            
-            if not valid_results:
-                # If no valid results, check for info messages
-                info_messages = [r.get("info") for r in results if "info" in r]
-                if info_messages:
-                    return "\n".join(info_messages)
-                
-                error_messages = [r.get("error") for r in results if "error" in r]
-                if error_messages:
-                    return f"Error en la consulta: {' '.join(error_messages)}"
-                
-                return "No se encontraron resultados para la consulta."
-            
-            # Format the results as structured data for the generation agent
-            formatted_results = {}
-            
-            # Get all unique keys from the results
-            all_keys = set()
-            for result in valid_results:
-                all_keys.update(result.keys())
-            
-            # Create a structured dataset with columns
-            for key in all_keys:
-                if key not in ["generated_sparql", "info", "error"]:
-                    formatted_results[key] = [str(r.get(key, "")) for r in valid_results]
-            
-            # Create a more descriptive document for the generation agent
-            document_text = f"Resultados de la consulta '{query}':\n\n"
-            
-            # Add table headers
-            headers = list(formatted_results.keys())
-            document_text += " | ".join(headers) + "\n"
-            document_text += "-" * (sum(len(h) for h in headers) + 3 * (len(headers) - 1)) + "\n"
-            
-            # Si la consulta está en español y hay ingredientes, traducirlos utilizando LLM
-            if is_spanish_query and "ingredientes" in formatted_results:
-                # For each result row that has ingredients
-                for i, ingredient_list in enumerate(formatted_results["ingredientes"]):
-                    if ingredient_list:
-                        # Split by commas and translate each ingredient
-                        ingredients = [ing.strip() for ing in ingredient_list.split(",")]
-                        translated_ingredients = []
-                        
-                        for ingredient in ingredients:
-                            # Traducir ingrediente de inglés a español usando LLM
-                            try:
-                                esp_ingredient = await self._translate_ingredient_with_llm(
-                                    ingredient, source_lang="en", target_lang="es")
-                                translated_ingredients.append(esp_ingredient.capitalize())
-                            except Exception as e:
-                                print(f"[Ontology] Error al traducir ingrediente {ingredient}: {str(e)}")
-                                translated_ingredients.append(ingredient)
-                        
-                        # Update the formatted results with translated ingredients
-                        formatted_results["ingredientes"][i] = ", ".join(translated_ingredients)
-            
-            # Add table rows
-            max_rows = max(len(values) for values in formatted_results.values())
-            for i in range(max_rows):
-                row = []
-                for key in headers:
-                    values = formatted_results.get(key, [])
-                    value = values[i] if i < len(values) else ""
-                    row.append(value)
-                document_text += " | ".join(row) + "\n"
-            
-            # Add instructions for generating a natural language response
-            if is_spanish_query:
-                document_text += "\nGenera una respuesta natural en español que describa estos resultados de manera conversacional. "
-                document_text += "Si no hay resultados, indícalo. Incluye información sobre los cócteles encontrados y sus ingredientes."
-            else:
-                document_text += "\nGenerate a natural language response in English that describes these results in a conversational manner. "
-                document_text += "If there are no results, indicate that. Include information about the cocktails found and their ingredients."
-            
-            try:
-                # Set a 30-second timeout for the LLM generation
-                llm_task = generation_agent.generate_response(document_text, [])
-                
-                start_time = __import__('time').time()
-                response = await asyncio.wait_for(llm_task, timeout=30.0)
-                elapsed_time = __import__('time').time() - start_time
-                
-                print(f"[Ontology] ✓ Respuesta natural generada en {elapsed_time:.2f}s")
-                
-                return response
-                
-            except asyncio.TimeoutError:
-                print(f"[Ontology] ⚠️ Tiempo agotado al generar respuesta natural. Devolviendo resultados crudos.")
-                
-                # Fallback to a simple response
-                if is_spanish_query:
-                    return f"Encontré {len(valid_results)} cócteles que coinciden con tu búsqueda. Aquí está el primero: {valid_results[0].get('nombre', 'Sin nombre')}."
-                else:
-                    return f"I found {len(valid_results)} cocktails matching your search. Here's the first one: {valid_results[0].get('nombre', 'Unnamed')}."
-                    
-            except Exception as e:
-                print(f"[Ontology] ❌ Error al generar respuesta natural: {str(e)}. Devolviendo resultados crudos.")
-                
-                # Fallback to a simple response
-                if is_spanish_query:
-                    return f"Encontré {len(valid_results)} cócteles que coinciden con tu búsqueda. Ocurrió un error al generar una respuesta natural."
-                else:
-                    return f"I found {len(valid_results)} cocktails matching your search. An error occurred while generating a natural response."
-                    
-        except Exception as e:
-            logger.error(f"Error generating natural language response: {e}")
-            print(f"[Ontology] ❌ Error general al generar respuesta: {str(e)}")
-            
-            # Return a simple error message
-            return f"Error al procesar los resultados: {str(e)}"
-    
-    async def natural_language_query(self, query: str) -> List[Dict[str, Any]]:
-        """
-        Convert natural language query to SPARQL and execute with improved robustness.
-        Uses timeout handling to prevent blocking.
-        
-        Args:
-            query: Natural language query
-            
-        Returns:
-            Query results
-        """
-        import asyncio
-        try:
-            # Log the start of the process
-            print(f"[Ontology] Procesando consulta en lenguaje natural: '{query}'")
-            logger.info(f"Processing natural language query: '{query}'")
-            
-            # Verificar si la consulta parece ser una respuesta en lugar de una pregunta
-            # Para evitar procesar accidentalmente respuestas como consultas
-            if query.count('\n') > 5 or ('**' in query and ':' in query and '-' in query):
-                logger.warning(f"La consulta parece ser una respuesta generada, no una pregunta. Devolviendo error.")
-                print(f"[Ontology] ⚠️ La entrada parece ser una respuesta, no una consulta.")
-                return [{"error": "La consulta parece ser una respuesta generada en lugar de una pregunta."}]
-            
-            # Asegurarse de que la ontología esté cargada correctamente
-            if not self._ensure_ontology_loaded():
-                logger.error("Failed to load ontology, graph is still empty or too small")
-                print(f"[Ontology] ❌ No se pudo cargar la ontología. La ontología parece estar vacía o no existe.")
-                # Informar al usuario de cómo crear la ontología
-                return [{"error": "La ontología no está disponible o está vacía. Ejecute primero './agent_system.sh ontology extract' para crear la ontología."}]
-            else:
-                print(f"[Ontology] ✓ Ontología disponible con {len(self.graph)} tripletas.")
-                
-            # Convert natural language query to SPARQL with timeout protection
-            print(f"[Ontology] Convirtiendo consulta a SPARQL...")
-            start_time = __import__('time').time()
-            
-            try:
-                # Use wait_for with a timeout to ensure we don't block indefinitely
-                convert_task = self._nl_to_sparql(query)
-                sparql_query = await asyncio.wait_for(convert_task, timeout=50.0)
-                
-                # Log success
-                elapsed_time = __import__('time').time() - start_time
-                print(f"[Ontology] ✓ Consulta SPARQL generada en {elapsed_time:.2f}s")
-                logger.info(f"Generated SPARQL query in {elapsed_time:.2f}s: {sparql_query}")
-                
-            except asyncio.TimeoutError:
-                print(f"[Ontology] ⚠️ Timeout al generar consulta SPARQL (50s). Usando consulta fallback.")
-                logger.error(f"Timeout generating SPARQL from natural language query")
-                
-                # Generate a simple fallback query
-                sparql_query = self._get_fallback_sparql_query(query)
-            
-            # La consulta SPARQL ya debería tener LIMIT desde el método _nl_to_sparql
-            # No necesitamos añadir LIMIT aquí
-            
-            # Validar rápidamente la consulta antes de ejecutarla
-            if not sparql_query or (("SELECT" not in sparql_query.upper()) and ("CONSTRUCT" not in sparql_query.upper()) and ("ASK" not in sparql_query.upper())):
-                print(f"[Ontology] ⚠️ La consulta generada no es válida. Usando alternativa simple.")
-                # Si la consulta es sobre vodka, usar una consulta especial más flexible
-                if "vodka" in query.lower() or any(ing in query.lower() for ing in ["gin", "rum", "tequila", "whiskey", "brandy"]):
-                    print(f"[Ontology] Detectada consulta sobre ingredientes, usando consulta especial robusta...")
-                    
-                    # Determinar el ingrediente a buscar
-                    ingredient = "vodka"  # Por defecto
-                    for ing in ["vodka", "gin", "rum", "tequila", "whiskey", "brandy"]:
-                        if ing in query.lower():
-                            ingredient = ing
-                            break
-                    
-                    # Usar el método fallback mejorado para generar la consulta
-                    sparql_query = self._get_fallback_sparql_query(query)
-                else:
-                    # Consulta genérica para otros casos
-                    sparql_query = """
-SELECT ?cocktail ?ingredient
-WHERE {
-  ?cocktail rdf:type cocktail:Cocktail .
-  ?cocktail property:hasIngredient ?ingredient .
-} LIMIT 10
-"""
-                
-            # Execute SPARQL query with timeout protection
-            print(f"[Ontology] Ejecutando consulta SPARQL: {sparql_query[:100]}...")
-            query_start = __import__('time').time()
-            
-            try:
-                # Ejecutar la consulta directamente
-                results = self.sparql_query(sparql_query)
-                
-                query_time = __import__('time').time() - query_start
-                print(f"[Ontology] ✓ Consulta ejecutada en {query_time:.2f}s con {len(results)} resultados")
-                logger.info(f"Query executed in {query_time:.2f}s with {len(results)} results")
-                
-            except asyncio.TimeoutError:
-                print(f"[Ontology] ⚠️ Timeout ejecutando consulta SPARQL (15s).")
-                logger.error(f"Timeout executing SPARQL query")
-                # Return error message instead of empty results
-                return [{"error": "La consulta SPARQL tardó demasiado en ejecutarse. Intente con una consulta más específica."}]
-            
-            except Exception as e:
-                print(f"[Ontology] ❌ Error durante la ejecución de la consulta: {str(e)}")
-                logger.error(f"Error executing SPARQL query: {e}")
-                
-                # Devolver un mensaje de error que incluya el error original completo
-                # para que pueda ser detectado por el coordinator y activar el crawler dinámico
-                return [{"error": f"Error durante la ejecución de la consulta: {str(e)}"}]
-            
-            # Add the generated SPARQL for reference
-            if results:
-                # Store the raw results for reference
-                raw_results = results.copy()
-                
-                # Add SPARQL query for reference
-                raw_results.append({"generated_sparql": sparql_query})
-                
-                # Generate natural language response
-                print(f"[Ontology] Generando respuesta en lenguaje natural para la consulta...")
-                nl_response = await self._generate_nl_response(query, raw_results)
-                
-                # Add the natural language response at the beginning of results
-                if nl_response:
-                    raw_results.insert(0, {"nl_response": nl_response})
-                
-                return raw_results
-            else:
-                # If no results, return a helpful message with better diagnostic information
-                print(f"[Ontology] ⚠️ La consulta no devolvió resultados: {sparql_query}")
-                
-                # Return information about the query that produced no results
-                no_results_message = f"No se encontraron resultados para la consulta / No results found for this query. "
-                
-                # Check for potential format issues in the query
-                format_issues = []
-                
-                # Extract terms that might be incorrectly formatted from the SPARQL query
-                import re
-                
-                # Common naming patterns to check
-                query_lower = query.lower()
-                
-                # Comprehensive checks for common ingredient and glass types in both languages
-                
-                # Check for glass types in the query
-                glass_patterns = [
-                    ("copa alta", "vaso alto", "highball", "high ball", "HighballGlass"),
-                    ("copa martini", "vaso martini", "martini glass", "MartiniGlass"),
-                    ("copa hurricane", "vaso hurricane", "hurricane glass", "HurricaneGlass"),
-                    ("copa margarita", "vaso margarita", "margarita glass", "MargaritaGlass"),
-                    ("copa champagne", "copa champaña", "champagne glass", "ChampagneFlute"),
-                    ("copa collins", "vaso collins", "collins glass", "CollinsGlass")
-                ]
-                
-                for pattern_group in glass_patterns:
-                    target_format = pattern_group[-1]
-                    if any(p in query_lower for p in pattern_group[:-1]) and target_format not in sparql_query:
-                        format_issues.append(f'"{pattern_group[0]}" debe usar "{target_format}" en la ontología')
-                
-                # Check for ingredients and mixers in the query
-                ingredient_patterns = [
-                    ("granadina", "grenadine", "Grenadine"),
-                    ("vino tinto", "red wine", "RedWine"),
-                    ("vino blanco", "white wine", "WhiteWine"),
-                    ("zumo de naranja", "jugo de naranja", "orange juice", "OrangeJuice"),
-                    ("agua tonica", "agua tónica", "tonic water", "TonicWater"),
-                    ("vermut", "vermouth", "Vermouth"),
-                ]
-                
-                for pattern_group in ingredient_patterns:
-                    target_format = pattern_group[-1]
-                    if any(p in query_lower for p in pattern_group[:-1]) and target_format not in sparql_query:
-                        format_issues.append(f'"{pattern_group[0]}" debe usar "{target_format}" en la ontología')
-                
-                # Check for cocktail name format issues
-                if "tinto de verano" in query_lower and "TintoDeVerano" not in sparql_query:
-                    format_issues.append('"tinto de verano" debe usar "TintoDeVerano" en la ontología (PascalCase)')
-                
-                # If we identified potential format issues
-                if format_issues:
-                    no_results_message += "Posibles problemas de formato detectados / Possible format issues detected: " + ", ".join(format_issues) + ". "
-                    no_results_message += """
-                    
-• RECORDATORIO / REMINDER:
-  - Los términos compuestos usan formato PascalCase sin espacios / Compound terms use PascalCase without spaces
-  - Ejemplos / Examples: "vino tinto" → "RedWine", "copa alta" → "HighballGlass"
-  - Los nombres de cócteles mantienen su idioma original pero en PascalCase / Cocktail names keep their original language but in PascalCase
-  - Ejemplos / Examples: "Tinto de Verano" → "TintoDeVerano", "Bloody Mary" → "BloodyMary"
-                    """
-                
-                # If it's an ingredient query, provide more specific information
-                if "vodka" in query.lower():
-                    no_results_message += "La ontología contiene cócteles con vodka como ingrediente. Intentando con consulta alternativa definitiva..."
-                    # Intentar una consulta muy simple directa pero más robusta para vodka
-                    final_query = """
-PREFIX cocktail: <http://www.semanticweb.org/cocktail/ontology#>
-PREFIX property: <http://www.semanticweb.org/cocktail/property#>
-PREFIX ingredient: <http://www.semanticweb.org/cocktail/ingredient#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-
-SELECT ?cocktail 
-       (REPLACE(STR(?cocktail), "^.*#", "") AS ?nombre) 
-       ("Vodka" AS ?ingredientes)
-WHERE {
-  ?cocktail rdf:type cocktail:Cocktail .
-  {
-    # Intenta con URI exacta
-    ?cocktail property:hasIngredient ingredient:Vodka .
-  } UNION {
-    # Intenta con cualquier ingrediente que contenga vodka en el nombre
-    ?cocktail property:hasIngredient ?ing .
-    FILTER(CONTAINS(LCASE(STR(?ing)), "vodka"))
-  } UNION {
-    # Intenta con DejaVu específicamente que sabemos que tiene vodka
-    FILTER(?cocktail = cocktail:DejaVu || ?cocktail = cocktail:CóctelDejaVu)
-  }
-} 
-"""
-                    try:
-                        print(f"[Ontology] Intentando consulta final ultrasimple para vodka...")
-                        logger.info("Trying final simple query for vodka with explicit projection")
-                        results_raw = self.graph.query(final_query)
-                        
-                        # Convert QueryResult to a list to check length and prevent consuming the generator
-                        results_list = list(results_raw)
-                        
-                        print(f"[Ontology] La consulta final devolvió {len(results_list)} resultados.")
-                        logger.info(f"Final vodka query returned {len(results_list)} results")
-                        
-                        if len(results_list) > 0:
-                            final_results = []
-                            
-                            # Process each row more carefully
-                            for row in results_list:
-                                try:
-                                    # Print debug information
-                                    print(f"[Ontology] Procesando fila: {row}")
-                                    
-                                    # Create a result dictionary manually from the row values
-                                    result = {}
-                                    
-                                    # Process all values based on position since row.vars might be causing issues
-                                    if len(row) >= 1:
-                                        cocktail_value = row[0]
-                                        if isinstance(cocktail_value, rdflib.term.URIRef):
-                                            uri_str = str(cocktail_value)
-                                            result["cocktail"] = uri_str.split('#')[-1] if '#' in uri_str else uri_str
-                                        else:
-                                            result["cocktail"] = str(cocktail_value)
-                                    
-                                    if len(row) >= 2:
-                                        result["nombre"] = str(row[1])
-                                    else:
-                                        # If nombre is not provided, extract it from cocktail
-                                        cocktail_str = str(result.get("cocktail", ""))
-                                        result["nombre"] = cocktail_str.split('#')[-1] if '#' in cocktail_str else cocktail_str
-                                    
-                                    if len(row) >= 3:
-                                        result["ingredientes"] = str(row[2])
-                                    else:
-                                        result["ingredientes"] = "Vodka"
-                                    
-                                    final_results.append(result)
-                                    
-                                except Exception as row_err:
-                                    print(f"[Ontology] Error procesando fila: {str(row_err)}")
-                                    logger.error(f"Error processing row in vodka query: {row_err}")
-                                    continue
-                            
-                            if final_results:
-                                print(f"[Ontology] ✓ Se encontraron {len(final_results)} cócteles con vodka")
-                                
-                                # Add metadata
-                                final_results_with_meta = final_results.copy()
-                                final_results_with_meta.append({"generated_sparql": final_query})
-                                final_results_with_meta.append({"info": f"Se encontraron {len(final_results)} resultados con la consulta final para Vodka."})
-                                
-                                # Generate natural language response
-                                print(f"[Ontology] Generando respuesta en lenguaje natural para la consulta de vodka...")
-                                nl_response = await self._generate_nl_response(query, final_results_with_meta)
-                                
-                                # Add the natural language response at the beginning
-                                if nl_response:
-                                    final_results_with_meta.insert(0, {"nl_response": nl_response})
-                                
-                                return final_results_with_meta
-                    except Exception as e:
-                        print(f"[Ontology] Error en consulta final: {e}")
-                        logger.error(f"Error in final vodka query: {e}")
-                        
-                    no_results_message = "No se pudieron encontrar cócteles con vodka a pesar de múltiples intentos. La ontología podría tener problemas estructurales."
-                elif any(ing in query.lower() for ing in ["gin", "rum", "tequila", "whiskey", "brandy"]):
-                    no_results_message += f"Intente reformular la pregunta o mencione otro ingrediente."
-                else:
-                    no_results_message += "Intente con una consulta diferente o más específica."
-                
-                return [{"info": no_results_message}, {"generated_sparql": sparql_query}]
-            
-        except Exception as e:
-            logger.error(f"Error with natural language query: {e}")
-            print(f"[Ontology] ❌ Error general en consulta: {str(e)}")
-            return [{"error": str(e)}]
-    
-    async def _nl_to_sparql(self, query: str) -> str:
-        """
-        Convert natural language query to SPARQL using LLM with enhanced bilingual support.
-        This method handles queries in both Spanish and English, ensuring proper formatting
-        for the ontology's naming conventions.
-        
-        Args:
-            query: Natural language query in Spanish or English
-            
-        Returns:
-            SPARQL query string
-        """
-        from agents.generation_agent.generation_agent import GenerationAgent
-        import asyncio
-        import os
-        import re
-        
-        # Create a temporary generation agent
-        generation_agent = GenerationAgent("temp_sparql_generator")
-        
-        # Store the original query for reference
-        original_query = query
-        original_language = self._detect_language(query)
-        
-        print(f"[Ontology] Consulta original ({original_language.upper()}): '{original_query}'")
-        
-        # Process the query for ontology format with LLM (handles both languages)
-        # This ensures all terms use proper PascalCase and conventions for the ontology
-        query = await self._translate_full_query_with_llm(query)
-        print(f"[Ontology] Consulta procesada para ontología: '{query}'")
-        
-        # We'll keep this empty list for compatibility with existing code
-        # but the modern approach uses full query translation instead
-        ingredients_found = []
-        
-        # Build prompt for SPARQL generation
-        prompt = self._build_sparql_generation_prompt(query)
-        
-        try:
-            # Log that we're starting the conversion
-            print(f"[Ontology] Iniciando conversión de consulta natural a SPARQL: '{query}'")
-            logger.info(f"Starting natural language to SPARQL conversion for: '{query}'")
-            
-            # Set a strict timeout of 45 seconds for the LLM generation request
-            llm_task = generation_agent.generate_response(prompt, [])
-            
-            # Utilizar asyncio.wait_for con un timeout más corto
-            start_time = __import__('time').time()
-            response = await asyncio.wait_for(llm_task, timeout=45.0)
-            elapsed_time = __import__('time').time() - start_time
-            
-            # Log the success and timing
-            print(f"[Ontology] ✓ Conversión exitosa en {elapsed_time:.2f}s")
-            logger.info(f"SPARQL conversion successful in {elapsed_time:.2f}s")
-            
-            # Extract SPARQL query from response
-            sparql_query = self._extract_sparql_from_response(response)
-            
-            # Validar que la respuesta se parece a una consulta SPARQL
-            if "SELECT" not in sparql_query.upper() and "CONSTRUCT" not in sparql_query.upper():
-                print(f"[Ontology] ⚠️ La respuesta no parece ser una consulta SPARQL válida. Usando consulta alternativa.")
-                logger.warning(f"Response doesn't look like valid SPARQL: {sparql_query[:100]}...")
-                return self._get_fallback_sparql_query(query, ingredients_found)
-            
-            # Limpiar la consulta SPARQL para asegurarnos que está bien formateada
-            sparql_query = sparql_query.strip()
-            
-            # Asegurarnos que está correctamente formateada con WHERE y llaves
-            if "WHERE" not in sparql_query.upper():
-                print(f"[Ontology] ⚠️ La consulta generada no tiene cláusula WHERE. Usando consulta alternativa.")
-                return self._get_fallback_sparql_query(query, ingredients_found)
-            
-            # Corregir los nombres de los ingredientes directamente en la consulta SPARQL
-            for esp, eng in ingredients_found:
-                # Capitalize ingredients
-                eng_cap = eng.capitalize()
-                
-                # Corregir referencias a ingredientes en minúsculas
-                sparql_query = re.sub(
-                    f'ingredient:{re.escape(eng)}\\b', 
-                    f'ingredient:{eng_cap}', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-                
-                # Corregir referencias a ingredientes en español
-                sparql_query = re.sub(
-                    f'ingredient:{re.escape(esp)}\\b', 
-                    f'ingredient:{eng_cap}', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-                
-                # Corregir filtros con strings - versión inglés
-                sparql_query = re.sub(
-                    f'\\?ingredient\\s*=\\s*["\']({re.escape(eng)})["\']', 
-                    f'?ingredient = ingredient:{eng_cap}', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-                
-                # Corregir filtros con strings - versión español
-                sparql_query = re.sub(
-                    f'\\?ingredient\\s*=\\s*["\']({re.escape(esp)})["\']', 
-                    f'?ingredient = ingredient:{eng_cap}', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-                
-                # Corregir patrones CONTAINS para buscar ingredientes
-                sparql_query = re.sub(
-                    f'CONTAINS\\(LCASE\\(STR\\(\\?ingredient\\)\\),\\s*["\']({re.escape(eng)})["\']\\)', 
-                    f'CONTAINS(LCASE(STR(?ingredient)), "{eng.lower()}")', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-                
-                sparql_query = re.sub(
-                    f'CONTAINS\\(LCASE\\(STR\\(\\?ingredient\\)\\),\\s*["\']({re.escape(esp)})["\']\\)', 
-                    f'CONTAINS(LCASE(STR(?ingredient)), "{eng.lower()}")', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-                
-                # Buscar y corregir otros patrones de filtering por nombre de ingrediente
-                sparql_query = re.sub(
-                    f'\\?ingredientName\\s*=\\s*["\']({re.escape(eng)})["\']', 
-                    f'?ingredientName = "{eng_cap}"', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-                
-                sparql_query = re.sub(
-                    f'\\?ingredientName\\s*=\\s*["\']({re.escape(esp)})["\']', 
-                    f'?ingredientName = "{eng_cap}"', 
-                    sparql_query, 
-                    flags=re.IGNORECASE
-                )
-            
-            # Corregir cualquier error en el formato SPARQL
-            # Arreglar prefijo incorrecto cocktail:Ingredient:X -> ingredient:X
-            sparql_query = re.sub(
-                r'cocktail:Ingredient:(\w+)', 
-                r'ingredient:\1', 
-                sparql_query
-            )
-            
-            # Asegurarse que toda referencia a ingrediente por nombre (sin URIs) use la versión capitalizada
-            for esp, eng in ingredients_found:
-                eng_cap = eng.capitalize()
-                
-                # Buscar referencias al ingrediente por nombre (sin URI) y capitalizarlo
-                sparql_query = re.sub(
-                    f'["\']({re.escape(eng)})["\']', 
-                    f'"{eng_cap}"', 
-                    sparql_query,
-                    flags=re.IGNORECASE
-                )
-                
-                # También para la versión en español
-                if esp != eng:  # Solo si es diferente
-                    sparql_query = re.sub(
-                        f'["\']({re.escape(esp)})["\']', 
-                        f'"{eng_cap}"', 
-                        sparql_query,
-                        flags=re.IGNORECASE
-                    )
-            
-            print(f"[Ontology] ✓ Consulta SPARQL generada y optimizada: {sparql_query[:150]}...")
-            logger.info(f"Generated SPARQL query in {elapsed_time:.2f}s: {sparql_query}")
-            
-            return sparql_query
-            
-        except asyncio.TimeoutError:
-            logger.error("LLM request for SPARQL generation timed out after 45 seconds")
-            print(f"[Ontology] ⚠️ Se agotó el tiempo de espera (45s) para la generación de SPARQL. Usando consulta alternativa.")
-            
-            # Return a fallback SPARQL query based on keywords in the original query
-            return self._get_fallback_sparql_query(query, ingredients_found)
-            
-        except Exception as e:
-            logger.error(f"Error generating SPARQL from natural language: {e}")
-            print(f"[Ontology] ❌ Error al generar SPARQL: {str(e)}. Usando consulta alternativa.")
-            
-            # Return a fallback query
-            return self._get_fallback_sparql_query(query, ingredients_found)
-        """
-        Generate a fallback SPARQL query based on keywords in the original query.
-        
-        Args:
-            query: Original natural language query
-            ingredients_found: Optional pre-detected ingredients as tuples of (spanish, english)
-            
-        Returns:
-            Fallback SPARQL query
-        """
-        query_lower = query.lower()
-        
-        # Look for ingredient-related keywords in both English and Spanish
-        ingredients = []
-        
-        # Dictionary of ingredients with English as key and Spanish as value
-        ingredient_translations = {
-            "vodka": "vodka", 
-            "gin": "ginebra",
-            "rum": "ron",
-            "tequila": "tequila",
-            "whiskey": "whisky",
-            "whisky": "whisky",
-            "brandy": "brandy",
-            "vermouth": "vermut",
-            "lime": "lima",
-            "lemon": "limón",
-            "orange": "naranja",
-            "pineapple": "piña",
-            "cranberry": "arándano",
-            "mint": "menta",
-            "coffee": "café",
-            "milk": "leche",
-            "cream": "crema",
-            "sugar": "azúcar",
-            "ginger": "jengibre",
-            "strawberry": "fresa",
-            "coconut": "coco",
-            "cinnamon": "canela"
-        }
-        
-        # Use pre-detected ingredients if available
-        if ingredients_found and isinstance(ingredients_found, list) and len(ingredients_found) > 0:
-            for esp, eng in ingredients_found:
-                if eng not in ingredients:
-                    print(f"[Ontology] Usando ingrediente previamente detectado: {esp} → {eng}")
-                    ingredients.append(eng)
         else:
-            # Otherwise check for ingredients in any language
-            for eng_ingredient, esp_ingredient in ingredient_translations.items():
-                if eng_ingredient in query_lower or esp_ingredient in query_lower:
-                    # Always use the English version for the query
-                    if eng_ingredient not in ingredients:
-                        print(f"[Ontology] Detectado ingrediente: {esp_ingredient} → {eng_ingredient}")
-                        ingredients.append(eng_ingredient)
-        
-        # If we found specific ingredients, create a query for them
-        if ingredients:
-            ingredient = ingredients[0]  # Use the first found ingredient
-            logger.info(f"Using fallback query for ingredient: {ingredient}")
-            ingredient_cap = ingredient.capitalize()
-            
-            print(f"[Ontology] Generando consulta robusta para ingrediente: {ingredient} (encontrado en la consulta como '{ingredient}' o '{ingredient_translations.get(ingredient)}')")
-            
-            # Consulta robusta y mejorada que busca cócteles con el ingrediente en diferentes formas
-            # y devuelve etiquetas más amigables para el usuario
-            query = f"""
-PREFIX cocktail: <http://www.semanticweb.org/cocktail/ontology#>
-PREFIX property: <http://www.semanticweb.org/cocktail/property#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX ingredient: <http://www.semanticweb.org/cocktail/ingredient#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-
-SELECT ?cocktail 
-       (REPLACE(STR(?cocktail), "^.*#", "") AS ?nombre) 
-       (GROUP_CONCAT(DISTINCT ?ingredientName; separator=", ") AS ?ingredientes)
-WHERE {{
-  # Primera forma: buscar el ingrediente exacto
-  ?cocktail rdf:type cocktail:Cocktail .
-  ?cocktail property:hasIngredient ingredient:{ingredient_cap} .
-
-  # Obtener todos los ingredientes para información completa
-  ?cocktail property:hasIngredient ?ingredient .
-  BIND(REPLACE(STR(?ingredient), "^.*#", "") AS ?ingredientName)
-}}
-GROUP BY ?cocktail
-"""
-            return query
-        
-        # Look for glass type keywords
-        glass_types = ["martini", "highball", "collins", "margarita", "shot"]
-        for glass in glass_types:
-            if glass in query_lower:
-                logger.info(f"Using fallback query for glass type: {glass}")
-                
-                return f"""
-SELECT ?cocktail ?glass
-WHERE {{
-  ?cocktail rdf:type cocktail:Cocktail .
-  ?cocktail property:servedIn ?glass .
-  FILTER(CONTAINS(LCASE(STR(?glass)), "{glass}"))
-}}
-"""
-        
-        # Default query showing some popular cocktails and their ingredients
-        logger.info("Using generic fallback query")
-        return """
-SELECT ?cocktail ?ingredient
-WHERE {
-  ?cocktail rdf:type cocktail:Cocktail .
-  ?cocktail property:hasIngredient ?ingredient .
-}
-"""
-    
-    def _extract_sparql_from_response(self, response: str) -> str:
-        """
-        Extract SPARQL query from LLM response.
-        Usa la versión mejorada del módulo extract_sparql.py.
-        
-        Args:
-            response: LLM response
-            
-        Returns:
-            SPARQL query string
-        """
-        # Delegamos a la función importada que tiene mejores correcciones y manejo de errores
-        return extract_sparql_from_response(response)
-        """
-        Extract SPARQL query from LLM response.
-        
-        Args:
-            response: LLM response
-            
-        Returns:
-            SPARQL query string
-        """
-        import re
-        
-        # Try to extract code blocks
-        if "```sparql" in response and "```" in response.split("```sparql", 1)[1]:
-            # Extract content between ```sparql and ```
-            sparql = response.split("```sparql", 1)[1].split("```", 1)[0].strip()
-        elif "```" in response and "```" in response.split("```", 1)[1]:
-            # Extract content between first ``` and second ```
-            sparql = response.split("```", 1)[1].split("```", 1)[0].strip()
-        else:
-            # Just use the whole response as a fallback
-            sparql = response.strip()
-        
-        # Corregir errores comunes en las consultas SPARQL generadas
-        
-        # 0. Asegurarse que todos los prefijos necesarios están definidos
-        required_prefixes = [
-            "PREFIX cocktail: <http://www.semanticweb.org/cocktail/ontology#>",
-            "PREFIX property: <http://www.semanticweb.org/cocktail/property#>",
-            "PREFIX ingredient: <http://www.semanticweb.org/cocktail/ingredient#>",
-            "PREFIX glass: <http://www.semanticweb.org/cocktail/glass#>",
-            "PREFIX method: <http://www.semanticweb.org/cocktail/method#>",
-            "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>",
-            "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>"
-        ]
-        
-        # Verificar si cada prefijo está presente y agregar los que faltan
-        prefix_section = ""
-        
-        # Verificar si hay una sección de prefijos
-        if not any(line.strip().startswith("PREFIX ") for line in sparql.split("\n")):
-            # No hay prefijos, agregamos todos
-            prefix_section = "\n".join(required_prefixes) + "\n\n"
-        else:
-            # Hay algunos prefijos, verificar cuáles faltan
-            for prefix in required_prefixes:
-                prefix_name = prefix.split("<")[0].strip()
-                if not any(line.strip().startswith(prefix_name) for line in sparql.split("\n")):
-                    prefix_section += prefix + "\n"
-            
-            if prefix_section:
-                prefix_section += "\n"
-        
-        # Si hay prefijos que agregar, insertarlos al principio
-        if prefix_section:
-            if sparql.upper().startswith("PREFIX"):
-                # Ya tiene prefijos, agrega los que faltan al principio
-                lines = sparql.split("\n")
-                prefix_lines = [l for l in lines if l.strip().upper().startswith("PREFIX")]
-                non_prefix_lines = [l for l in lines if not l.strip().upper().startswith("PREFIX")]
-                
-                # Combinar todos los prefijos y luego el resto del query
-                sparql = "\n".join(prefix_lines) + "\n" + prefix_section + "\n".join(non_prefix_lines)
-            else:
-                # No tiene ningún prefijo, agregar todos al principio
-                sparql = prefix_section + sparql
-        
-        # 1. Corregir uso incorrecto de FILTER con URIs de ingredientes
-        sparql = sparql.replace("cocktail:Ingredient:", "ingredient:")
-        
-        # 2. Corregir cláusulas FILTER para comparar con URIs de ingredientes
-        pattern = r'FILTER\s*\(\s*\?ingredient\s*=\s*["\'](\w+)["\']\s*\)'
-        
-        def replace_ingredient_filter(match):
-            ingredient_name = match.group(1)
-            ingredient_name_capitalized = ingredient_name.capitalize()
-            return f'FILTER(?ingredient = ingredient:{ingredient_name_capitalized})'
-        
-        sparql = re.sub(pattern, replace_ingredient_filter, sparql)
-        
-        # 3. Corregir referencias directas a ingredientes sin capitalizar
-        def capitalize_ingredient(match):
-            return f'ingredient:{match.group(1).capitalize()}'
-        
-        sparql = re.sub(r'ingredient:(\w+)', capitalize_ingredient, sparql)
-        
-        # 4. Corregir patrones comunes de CONTAINS y FILTER
-        def fix_contains_filter(match):
-            ingredient = match.group(1).capitalize()
-            return f'CONTAINS(LCASE(STR(?ingredient)), "{match.group(1).lower()}")'
-        
-        sparql = re.sub(
-            r'CONTAINS\(LCASE\(STR\(\?ingredient\)\),\s*["\'](\w+)["\']\)',
-            fix_contains_filter, 
-            sparql
-        )
-        
-        # 5. Corregir filtros que usan regex
-        def fix_regex_filter(match):
-            ingredient = match.group(1).lower()
-            return f'REGEX(STR(?ingredient), "{ingredient}", "i")'
-        
-        sparql = re.sub(
-            r'REGEX\(STR\(\?ingredient\),\s*["\'](\w+)["\']\s*,\s*["\']\w*["\']\)',
-            fix_regex_filter, 
-            sparql
-        )
-        
-        # 6. Corregir ingredientes dentro de cadenas literales
-        def capitalize_ingredient_in_string(match):
-            return f'"{match.group(1).capitalize()}"'
-        
-        # Lista común de ingredientes para identificar en strings
-        common_ingredients = [
-            "vodka", "gin", "rum", "tequila", "whiskey", "brandy", 
-            "vermouth", "lime", "lemon", "orange", "pineapple", 
-            "cranberry", "mint", "coffee", "milk", "cream", "sugar",
-            "aperol"  # Añadido para el caso específico
-        ]
-        
-        for ingredient in common_ingredients:
-            sparql = re.sub(
-                f'["\']({re.escape(ingredient)})["\']', 
-                capitalize_ingredient_in_string, 
-                sparql,
-                flags=re.IGNORECASE
-            )
-            
-        # 7. Corregir nombres de cócteles específicos conocidos
-        cocktail_mappings = {
-            "aperol spritz": "AperolSpritz",
-            "aperol": "Aperol",
-            "bloody mary": "BloodyMary",
-            "margarita": "Margarita",
-            "tinto de verano": "TintoDeVerano",
-            "piña colada": "PiñaColada",
-            "mojito": "Mojito"
-        }
-        
-        # Corregir referencias directas a cócteles
-        for cocktail_name, formatted_name in cocktail_mappings.items():
-            # Corregir referencia directa al URI
-            sparql = re.sub(
-                f'cocktail:({re.escape(cocktail_name)})', 
-                f'cocktail:{formatted_name}', 
-                sparql,
-                flags=re.IGNORECASE
-            )
-            
-            # Corregir en patrones FILTER
-            sparql = re.sub(
-                f'\\?cocktail\\s*=\\s*cocktail:({re.escape(cocktail_name)})',
-                f'?cocktail = cocktail:{formatted_name}',
-                sparql,
-                flags=re.IGNORECASE
-            )
-            
-        # 8. Corregir errores comunes de sintaxis SPARQL
-        # Asegurarse de que los paréntesis están correctamente equilibrados
-        open_brackets = sparql.count("{")
-        close_brackets = sparql.count("}")
-        if open_brackets > close_brackets:
-            sparql += "}" * (open_brackets - close_brackets)
-        
-        # Asegurarse de que las cláusulas SELECT tienen una variable al menos
-        if "SELECT" in sparql.upper() and "WHERE" in sparql.upper():
-            select_part = sparql.split("WHERE")[0]
-            if "SELECT" in select_part.upper() and not re.search(r'SELECT\s+\?', select_part, re.IGNORECASE):
-                # Añadir una variable ?cocktail si falta
-                sparql = sparql.replace(
-                    "SELECT", 
-                    "SELECT ?cocktail", 
-                    1
-                )
-        
-        # 9. Para consultas que contienen "Aperol Spritz", crear una consulta específica
-        if "aperol" in sparql.lower():
-            cocktail_name = "AperolSpritz"  # Nombre específico para este cóctel
-            
-            # Crear una consulta robusta y sencilla para este caso específico
-            sparql = f"""
-PREFIX cocktail: <http://www.semanticweb.org/cocktail/ontology#>
-PREFIX property: <http://www.semanticweb.org/cocktail/property#>
-PREFIX ingredient: <http://www.semanticweb.org/cocktail/ingredient#>
-PREFIX glass: <http://www.semanticweb.org/cocktail/glass#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-
-SELECT ?cocktail
-       (REPLACE(STR(?cocktail), "^.*#", "") AS ?nombre)
-       (GROUP_CONCAT(DISTINCT ?ingredientName; separator=", ") AS ?ingredientes)
-WHERE {{
-  ?cocktail rdf:type cocktail:Cocktail .
-  
-  {{
-    ?cocktail = cocktail:{cocktail_name} .
-  }}
-  UNION
-  {{
-    FILTER(CONTAINS(LCASE(STR(?cocktail)), "aperol"))
-  }}
-  
-  # Obtener ingredientes
-  OPTIONAL {{
-    ?cocktail property:hasIngredient ?ingredient .
-    BIND(REPLACE(STR(?ingredient), "^.*#", "") AS ?ingredientName)
-  }}
-}}
-GROUP BY ?cocktail
-"""
-            
-        logger.info(f"SPARQL generado y corregido: {sparql[:200]}...")
-        
-        return sparql
-        
-        # 3. Corregir errores de formato con Rum
-        # Asegurar que si hay una comparación directa con "rum", se use la forma correcta "Rum"
-        # Por ejemplo: ?cocktail property:hasIngredient ingredient:rum -> ?cocktail property:hasIngredient ingredient:Rum
-        sparql = sparql.replace("ingredient:rum", "ingredient:Rum")
-        sparql = sparql.replace("ingredient:ron", "ingredient:Rum")
-        
-        # 4. Añadir lógica para otros ingredientes comunes 
-        ingredient_translations = {
-            "gin": "Gin", 
-            "vodka": "Vodka", 
-            "tequila": "Tequila", 
-            "whiskey": "Whiskey",
-            "ginebra": "Gin"
-        }
-        
-        for esp, eng in ingredient_translations.items():
-            sparql = sparql.replace(f"ingredient:{esp}", f"ingredient:{eng}")
-        
-        return sparql
-    
-    def _ensure_ontology_loaded(self) -> bool:
-        """
-        Asegura que la ontología está cargada o intenta cargarla directamente del directorio principal.
-        Esto ayuda a manejar casos donde la ontología no se cargó correctamente o usa rutas incorrectas.
-        
-        Returns:
-            bool: True si la ontología está correctamente cargada, False en caso contrario
-        """
-        if len(self.graph) < 100:  # Si hay pocas tripletas, la ontología probablemente no está cargada correctamente
-            print(f"[Ontology] La ontología parece estar vacía o casi vacía ({len(self.graph)} tripletas). Intentando cargar directamente...")
-            
-            # Intentar cargar desde la ruta estándar
-            success = self._load_ontology_if_exists()
-            
-            # Si no se pudo cargar, intentar con la ruta alternativa en el directorio raíz del proyecto
-            if not success or len(self.graph) < 100:
-                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                alt_path = os.path.join(project_root, "ontology", "cocktail_ontology.ttl")
-                
-                if os.path.exists(alt_path):
-                    print(f"[Ontology] Intentando cargar ontología desde ruta alternativa: {alt_path}")
-                    try:
-                        self.graph.parse(alt_path, format="turtle")
-                        print(f"[Ontology] ✓ Ontología cargada desde ruta alternativa con {len(self.graph)} tripletas")
-                        return True
-                    except Exception as e:
-                        print(f"[Ontology] ❌ Error al cargar ontología desde ruta alternativa: {str(e)}")
-                        return False
-                else:
-                    print(f"[Ontology] ❌ No se encontró la ontología en la ruta alternativa: {alt_path}")
-                    return False
-            else:
-                return True
-        else:
-            # La ontología ya está cargada
-            return True
-
-    def _detect_language(self, text: str) -> str:
-        """
-        Simple language detection for Spanish vs English.
-        
-        Args:
-            text: Text to detect language for
-            
-        Returns:
-            'es' for Spanish, 'en' for English
-        """
-        # Common Spanish words/patterns
-        spanish_words = ['muéstrame', 'cócteles', 'con', 'hecho', 'bebidas', 'cóctel', 
-                        'preparado', 'ingredientes', 'que', 'contienen', 'utilizan',
-                        'dame', 'quiero', 'necesito', 'cuáles', 'cuál', 'como']
-        
-        text_lower = text.lower()
-        
-        # Check for Spanish indicators - accented characters and common words
-        has_spanish_chars = any(char in text_lower for char in 'áéíóúñ¿¡')
-        has_spanish_words = any(word in text_lower.split() for word in spanish_words)
-        
-        if has_spanish_chars or has_spanish_words:
-            return 'es'
-        else:
-            return 'en'
-
-    async def _translate_ingredient_with_llm(self, ingredient: str, source_lang: str = "es", target_lang: str = "en") -> str:
-        """
-        Traduce un ingrediente de un idioma a otro utilizando el modelo de lenguaje.
-        
-        Args:
-            ingredient: El nombre del ingrediente a traducir
-            source_lang: El idioma de origen (por defecto "es" para español)
-            target_lang: El idioma de destino (por defecto "en" para inglés)
-            
-        Returns:
-            La traducción del ingrediente
-        """
-        from agents.generation_agent.generation_agent import GenerationAgent
-        import asyncio
-        
-        if not ingredient.strip():
-            return ingredient
-            
-        # Crear un agente temporal para la generación
-        generation_agent = GenerationAgent("temp_translate_agent")
-        
-        # Crear un prompt simple para la traducción
-        prompt = f"Traduce el siguiente ingrediente de cóctel del {source_lang} al {target_lang}. Responde solo con la palabra traducida: {ingredient}"
-        
-        try:
-            # Enviar la solicitud al LLM con un timeout corto
-            response = await asyncio.wait_for(
-                generation_agent.generate_response(prompt, []),
-                timeout=10.0
-            )
-            
-            # Limpiar la respuesta
-            translation = response.strip().lower()
-            
-            # Si hay varias palabras, tomar la primera
-            if " " in translation:
-                translation = translation.split()[0]
-                
-            return translation
-            
-        except Exception as e:
-            logger.error(f"Error al traducir ingrediente con LLM: {str(e)}")
-            print(f"[Ontology] Error traduciendo con LLM: {str(e)}. Usando el ingrediente original.")
-            return ingredient
-
-    async def _detect_and_translate_ingredients(self, query: str) -> list:
-        """
-        Detecta ingredientes en la consulta y los traduce al inglés.
-        
-        Args:
-            query: Consulta en lenguaje natural
-            
-        Returns:
-            Lista de tuplas (ingrediente_original, traducción)
-        """
-        import re
-        
-        # Determinar si la consulta está en español
-        is_spanish = self._detect_language(query) == 'es'
-        if not is_spanish:
-            return []
-            
-        # Lista de palabras clave que pueden preceder a ingredientes
-        ingredient_indicators = [
-            "con", "usando", "de", "hecho con", "preparado con", "que tenga", 
-            "que contenga", "incluya", "conteniendo", "a base de"
-        ]
-        
-        # Palabras que no son ingredientes (para evitar falsos positivos)
-        stop_words = [
-            "cócteles", "cóctel", "bebida", "bebidas", "receta", "recetas", 
-            "preparar", "hacer", "mostrar", "enseñar", "ver", "dame", 
-            "muéstrame", "quiero", "necesito", "para", "como", "cuál", "cuáles"
-        ]
-        
-        query_lower = query.lower()
-        ingredients_found = []
-        
-        # Extraer posibles ingredientes después de las palabras clave
-        for indicator in ingredient_indicators:
-            if indicator in query_lower:
-                parts = query_lower.split(indicator, 1)
-                if len(parts) > 1:
-                    after_indicator = parts[1].strip()
-                    # Tomar hasta el siguiente espacio o puntuación
-                    words = re.split(r'[,.\s]+', after_indicator)
-                    
-                    for word in words:
-                        if word and len(word) > 2 and word not in stop_words:
-                            # Traducir el ingrediente usando el LLM
-                            translation = await self._translate_ingredient_with_llm(word)
-                            ingredients_found.append((word, translation))
-                            break  # Solo tomar el primer ingrediente después del indicador
-        
-        # Si no encontramos ingredientes con los indicadores, buscar palabras que pueden ser ingredientes
-        if not ingredients_found:
-            words = re.split(r'[,.\s]+', query_lower)
-            for word in words:
-                if word and len(word) > 2 and word not in stop_words:
-                    # Verificar si la palabra es un posible ingrediente
-                    # Esto es una heurística simple - podríamos mejorarla
-                    if word not in ingredient_indicators and not any(w in word for w in ["cómo", "qué", "cuál", "muestra"]):
-                        translation = await self._translate_ingredient_with_llm(word)
-                        if translation != word:  # Si cambió en la traducción, probablemente es un ingrediente
-                            ingredients_found.append((word, translation))
-        
-        return ingredients_found
-    
-    async def _translate_full_query_with_llm(self, query: str) -> str:
-        """
-        Traduce una consulta completa de español a inglés usando el LLM, manteniendo
-        la estructura correcta para la ontología con formato PascalCase para términos compuestos.
-        Esta función maneja tanto consultas en español como en inglés.
-        
-        Args:
-            query: La consulta en cualquier idioma (español o inglés)
-            
-        Returns:
-            La consulta procesada para la ontología
-        """
-        from agents.generation_agent.generation_agent import GenerationAgent
-        import asyncio
-        
-        # Detectar el idioma de la consulta
-        query_language = self._detect_language(query)
-        
-        try:
-            # Crear un agente de generación temporal
-            generation_agent = GenerationAgent("temp_query_translator")
-            
-            # Construir el prompt para procesamiento - tanto para español como inglés
-            prompt = f"""
-            Eres un experto en ontologías de coctelería bilingüe (español-inglés). Tu tarea es preparar la consulta para 
-            buscar en una ontología especializada, siguiendo estas directrices:
-
-            DIRECTRICES DE PROCESAMIENTO BILINGÜE:
-            
-            1. FORMATO UNIVERSAL:
-               - TODOS los términos compuestos se almacenan en formato PascalCase SIN ESPACIOS
-               - Ejemplos: "High Ball" → "HighBall", "tinto de verano" → "TintoDeVerano"
-            
-            2. NOMBRES DE CÓCTELES:
-               - MANTENER EL NOMBRE ORIGINAL del cóctel en su idioma nativo
-               - Convertir a formato PascalCase sin espacios
-               - Ejemplos: 
-                 * "Tinto de Verano" → "TintoDeVerano" (español, mantiene idioma)
-                 * "Bloody Mary" → "BloodyMary" (inglés, mantiene idioma)
-                 * "Piña Colada" → "PiñaColada" (mantiene ñ y acentos)
-            
-            3. INGREDIENTES Y TÉRMINOS TÉCNICOS:
-               - Ingredientes comunes: en inglés con inicial mayúscula o PascalCase
-               - Ejemplos: 
-                 * "vino" → "Wine"
-                 * "vino tinto" → "RedWine" 
-                 * "zumo de naranja"/"jugo de naranja" → "OrangeJuice"
-                 * "agua tónica" → "TonicWater"
-            
-            4. TIPOS DE VASOS:
-               - Todos en inglés con formato PascalCase
-               - Ejemplos: 
-                 * "copa alta"/"vaso alto" → "HighballGlass"
-                 * "copa de Martini" → "MartiniGlass"
-                 * "copa Hurricane" → "HurricaneGlass"
-            
-            5. MÉTODOS DE PREPARACIÓN:
-               - Todos en inglés con formato PascalCase
-               - Ejemplos: 
-                 * "agitado y mezclado" → "ShakeAndStir"
-                 * "directo en vaso" → "BuildInGlass"
-            
-            6. ESTRATEGIA DE BÚSQUEDA MULTILINGÜE:
-               - Asegurar que la consulta pueda encontrar términos tanto en español como en inglés
-               - Para nombres de cócteles y términos ambiguos, mantener referencias a ambas versiones
-               - Ejemplos:
-                 * Para buscar "Tinto de Verano", usar "TintoDeVerano"
-                 * Para buscar "vino", usar "Wine" 
-               
-            Recuerda: La ontología SIEMPRE usa PascalCase para términos compuestos. Los términos técnicos están en inglés, 
-            pero los nombres propios de cócteles conservan su idioma original.
-            
-            Consulta original ({'español' if query_language == 'es' else 'inglés'}): "{query}"
-            
-            Consulta procesada (con formato para ontología): 
-            """
-            
-            # Realizar la traducción/procesamiento con timeout
-            print(f"[Ontology] Procesando consulta para formato de ontología: '{query}'")
-            start_time = __import__('time').time()
-            
-            # Esperar la respuesta con timeout
-            processing_task = generation_agent.generate_response(prompt, [])
-            processed_query = await asyncio.wait_for(processing_task, timeout=15.0)
-            
-            # Limpiar la respuesta procesada
-            processed_query = processed_query.strip().strip('"')
-            
-            # Registrar el resultado
-            elapsed_time = __import__('time').time() - start_time
-            print(f"[Ontology] ✓ Consulta procesada en {elapsed_time:.2f}s: '{processed_query}'")
-            
-            return processed_query
-            
-        except Exception as e:
-            print(f"[Ontology] ⚠️ Error al procesar consulta: {str(e)}. Usando consulta original.")
-            logger.error(f"Error processing query: {e}")
-            # En caso de error, devolver la consulta original
-            return query
+            # Para cualquier otra acción no implementada
+            logger.warning(f"Action '{action}' not yet implemented in ontology agent")
+            return {
+                "recipient": message.get("sender", "coordinator_agent"),
+                "content": {
+                    "action": "error",
+                    "error": f"Action not implemented: {action}",
+                    "operation_id": content.get("operation_id", "unknown")
+                }
+            }

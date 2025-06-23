@@ -26,6 +26,7 @@ from agents import (
     MessageBroker,
     ConfigManager
 )
+from agents.dynamic_crawler_agent.dynamic_crawler_agent import DynamicCrawlerAgent
 
 # Configure logging
 log_level_str = os.environ.get("LOGLEVEL", "INFO")
@@ -77,6 +78,7 @@ class AgentSystem:
         generator = GenerationAgent("generation_agent")
         ontology = OntologyAgent("ontology_agent")
         strategy = StrategyAgent("strategy_agent")
+        dynamic_crawler = DynamicCrawlerAgent("dynamic_crawler_agent")
         
         # Register all agents with coordinator
         self.coordinator.register_agent("crawler_agent", crawler)
@@ -86,6 +88,7 @@ class AgentSystem:
         self.coordinator.register_agent("generation_agent", generator)
         self.coordinator.register_agent("strategy_agent", strategy)
         self.coordinator.register_agent("ontology_agent", ontology)
+        self.coordinator.register_agent("dynamic_crawler_agent", dynamic_crawler)
         self.coordinator.register_agent("coordinator_agent", self.coordinator)
         
         logger.info("All agents created and registered")
@@ -149,7 +152,7 @@ class AgentSystem:
             
             try:
                 # Wait for the crawl to complete with a timeout
-                await asyncio.wait_for(crawl_future, timeout=1800)  # 30-minute timeout
+                await asyncio.wait_for(crawl_future, timeout=7200)  # 120-minute timeout (2 horas)
                 return {
                     "success": True,
                     "message": "Crawl and index process completed"

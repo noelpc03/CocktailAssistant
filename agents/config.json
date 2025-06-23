@@ -2,30 +2,58 @@
   "crawler_agent": {
     "default_urls": [
       "https://es.wikipedia.org/wiki/C%C3%B3ctel",
-      "https://en.wikipedia.org/wiki/List_of_cocktails"
+      "https://en.wikipedia.org/wiki/List_of_cocktails",
+      "https://www.diffordsguide.com/cocktails",
+      "https://iba-world.com/iba-official-cocktails/",
+      "https://www.liquor.com/recipes/",
+      "https://www.thespruceeats.com/classic-cocktail-recipes-759804",
+      "https://www.seriouseats.com/cocktails-5118362",
+      "https://punchdrink.com/recipes/",
+      "https://www.talesofthecocktail.org/",
+      "https://theeducatedbarfly.com/",
+      "https://www.liquor.com/slideshows/modern-classic-cocktails/",
+      "https://www.diffordsguide.com/new-cocktails",
+      "https://www.liquor.com/spirits/",
+      "https://distiller.com/",
+      "https://vinepair.com/spirit-types/",
+      "https://www.liquor.com/slideshows/history-of-cocktails/",
+      "https://punchdrink.com/articles/tagged/history/"
     ],
-    "max_depth": 2,
+    "max_depth": 5,
     "ant_colony": {
-      "num_ants": 8,
-      "alpha": 1.0,
-      "beta": 2.0,
-      "evaporation_rate": 0.1,
-      "deposit_factor": 1.0,
+      "num_ants": 16,
+      "alpha": 0.9,
+      "beta": 2.5,
+      "evaporation_rate": 0.05,
+      "deposit_factor": 1.2,
       "cocktail_keywords": [
         "cocktail", "coctel", "cóctel", "drink", "bebida", 
         "bartender", "recipe", "receta", "ingredients", "ingredientes",
-        "gin", "vodka", "rum", "tequila", "whiskey", "whisky", "bourbon"
+        "gin", "vodka", "rum", "tequila", "whiskey", "whisky", "bourbon",
+        "martini", "margarita", "mojito", "negroni", "daiquiri", "manhattan", "old fashioned",
+        "brandy", "vermouth", "bitters", "liqueur", "licor", "mixer", "garnish", "shaken", "stirred",
+        "aperitivo", "digestivo", "soda", "syrup", "jarabe", "lime", "lemon", "limón", "orange", "naranja"
       ],
       "trusted_domains_weight": {
         "wikipedia.org": 0.9,
-        "liquor.com": 0.8,
-        "diffordsguide.com": 0.8,
-        "iba-world.com": 0.7,
-        "thespruceeats.com": 0.7
+        "liquor.com": 0.9,
+        "diffordsguide.com": 0.9,
+        "iba-world.com": 0.9,
+        "thespruceeats.com": 0.9,
+        "punchdrink.com": 0.9,
+        "talesofthecocktail.org": 0.9,
+        "theeducatedbarfly.com": 0.9,
+        "vinepair.com": 0.9,
+        "distiller.com": 0.9,
+        "seriouseats.com": 0.9,
+        "imbibemagazine.com": 0.9,
+        "cocktailsafe.org": 0.9,
+        "mixology.eu": 0.9,
+        "esquire.com": 0.9
       },
       "blacklist_patterns": [
         "Special:", "User:", "Talk:", "File:", "Template:", "Help:", 
-        "Category_talk:", "disambiguation", "desambiguación"
+        "Category_talk:", "disambiguation", "desambiguación", "pinterest.com"
       ]
     }
   },
@@ -36,11 +64,12 @@
   },
   "retrieval_agent": {
     "max_results": 20,
-    "similarity_threshold": 0.6
+    "similarity_threshold": 0.2
   },
   "search_agent": {
     "max_results": 20,
-    "show_scores": true
+    "show_scores": true,
+    "model_name": "sentence-transformers/all-mpnet-base-v2"
   },
   "generation_agent": {
     "model": "mistral-medium",
@@ -49,7 +78,8 @@
     "max_output_tokens": 2048
   },
   "coordinator_agent": {
-    "timeout": 60
+    "timeout": 60,
+    "embedding_confidence_threshold": 0.3
   },
   "ontology_agent": {
     "batch_size": 3
@@ -57,5 +87,11 @@
   "strategy_agent": {
     "model": "mistral-medium",
     "temperature": 0.1
+  },
+  "dynamic_crawler_agent": {
+    "num_search_results": 5,
+    "min_results_threshold": 3,
+    "cache_ttl": 3600,
+    "max_cache_size": 100
   }
 }

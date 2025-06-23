@@ -108,6 +108,11 @@ class SearchAgent(Agent):
             # Format the results
             formatted_results = self.format_results(results)
             
+            # Extract similarity scores from original results if available
+            similarities = []
+            if results:
+                similarities = [result.get("score", 0.0) for result in results if isinstance(result, dict) and "score" in result]
+            
             return {
                 "recipient": original_sender,
                 "content": {
@@ -115,7 +120,8 @@ class SearchAgent(Agent):
                     "status": "success",
                     "query": query,
                     "results": formatted_results,
-                    "result_count": len(results)
+                    "result_count": len(results),
+                    "similarities": similarities  # Include similarity scores
                 }
             }
             
@@ -138,9 +144,9 @@ class SearchAgent(Agent):
         self.data_store.set("current_query", query)
         
         try:
-            # Use the same model as in the working implementation
+            # Use the model specified in config (same as vectorizer uses)
             from sentence_transformers import SentenceTransformer
-            model_name = 'paraphrase-multilingual-MiniLM-L12-v2'
+            model_name = self.config.get("model_name", "sentence-transformers/all-mpnet-base-v2")
             
             # Load the model if not already loaded
             if not hasattr(self, 'model'):
@@ -159,8 +165,11 @@ class SearchAgent(Agent):
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}")
             # Create a fallback embedding as a last resort
-            embedding = np.random.rand(768)
+            # Use the default dimension from the vectorizer config (768 for all-mpnet-base-v2)
+            embedding_dimension = 768
+            embedding = np.random.rand(embedding_dimension)
             embedding = embedding / np.linalg.norm(embedding)
+            logger.warning(f"Using fallback random embedding with dimension {embedding_dimension}")
             return embedding
         
         return embedding
