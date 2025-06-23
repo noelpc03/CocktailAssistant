@@ -2,7 +2,6 @@
 # Script para iniciar la aplicación web de Cocktail Assistant
 
 echo "Iniciando Cocktail Assistant..."
-echo "Instalando dependencias necesarias..."
 
 # Asegurarse de que las dependencias estén instaladas
 pip install -q -r requirements.txt

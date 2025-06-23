@@ -1,0 +1,72 @@
+[
+  {
+    "query": "¿Qué ingredientes lleva un Negroni?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["ginebra", "gin", "campari", "vermut", "vermouth", "sweet", "dulce"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["ginebra", "campari", "vermut dulce"]
+  },
+  {
+    "query": "¿En qué vaso se sirve un Martini?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["copa", "martini", "cóctel", "coctel", "cocktail"],
+    "expected_sections": ["vaso", "presentación"],
+    "expected_response_elements": ["copa", "martini", "cocktail glass"]
+  },
+  {
+    "query": "¿Qué ingredientes lleva un Martini?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["gin", "ginebra", "vermut", "seco", "dry vermouth", "aceituna", "olive"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["ginebra", "dry vermouth", "aceituna"]
+  },
+  {
+    "query": "¿Qué ingredientes lleva un Daiquiri clásico?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["ron", "blanco", "light rum", "lima", "limón", "azúcar"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["ron", "lima", "azúcar"]
+  },
+  {
+    "query": "¿Cómo se prepara un Manhattan?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["whisky", "bourbon", "sweet vermouth", "vermut dulce", "angostura", "cereza", "cherry"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["whisky", "vermut", "angostura"]
+  },
+  {
+    "query": "¿Qué es un Old Fashioned?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["whisky", "bourbon", "azúcar", "bitters", "amargos", "naranja", "orange"],
+    "expected_sections": ["descripción", "ingredientes"],
+    "expected_response_elements": ["whisky", "bourbon", "azúcar"]
+  },
+  {
+    "query": "¿Qué lleva un Espresso Martini?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["vodka", "café", "espresso", "kahlua", "azúcar", "licor de café"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["vodka", "kahlua", "café", "espresso"]
+  },
+  {
+    "query": "¿Qué ingredientes tiene un Penicillin?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["whisky", "scotch", "limón", "miel", "jengibre", "islay"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["whisky", "limón", "miel", "jengibre"]
+  },
+  {
+    "query": "¿Qué ingredientes lleva un Paper Plane?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["bourbon", "amaro nonino", "aperitivo", "limón", "lemon juice"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["bourbon", "amaro nonino", "aperitivo", "limón"]
+  },
+  {
+    "query": "¿Qué ingredientes lleva un Tommy's Margarita?",
+    "expected_strategy": "ontology",
+    "expected_keywords": ["tequila", "lime", "lima", "agave", "syrup", "jarabe"],
+    "expected_sections": ["ingredientes", "preparación"],
+    "expected_response_elements": ["tequila", "lima", "agave"]
+  }
+]

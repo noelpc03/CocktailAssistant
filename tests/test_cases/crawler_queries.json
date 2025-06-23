@@ -1,0 +1,37 @@
+[
+  {
+    "query": "¿Qué cócteles están de moda en el verano de 2025?",
+    "expected_strategy": "dynamic_crawler",
+    "expected_keywords": ["tendencias", "moda", "2025", "verano", "populares", "nuevos", "cócteles"],
+    "expected_sections": ["tendencias", "cócteles", "recetas"],
+    "expected_response_elements": ["tendencias", "populares", "2025"]
+  },
+  {
+    "query": "¿Cuáles son las últimas tendencias en cócteles con whisky en 2024?",
+    "expected_strategy": "dynamic_crawler",
+    "expected_keywords": ["whisky", "tendencias", "2024", "nuevos", "innovación", "mixología", "actual"],
+    "expected_sections": ["tendencias", "innovación", "ejemplos"],
+    "expected_response_elements": ["tendencias", "2024", "whisky", "innovaciones"]
+  },
+  {
+    "query": "¿Qué cócteles con tequila son tendencia actualmente?",
+    "expected_strategy": "dynamic_crawler",
+    "expected_keywords": ["tequila", "tendencia", "actuales", "populares", "nuevos", "reciente"],
+    "expected_sections": ["tendencias", "cócteles", "ejemplos"],
+    "expected_response_elements": ["tequila", "tendencia", "actuales", "populares"]
+  },
+  {
+    "query": "¿Qué nuevos licores se han lanzado en 2024 para coctelería?",
+    "expected_strategy": "dynamic_crawler",
+    "expected_keywords": ["licores", "nuevos", "2024", "lanzamiento", "innovación", "marcas", "productos"],
+    "expected_sections": ["nuevos productos", "lanzamientos", "marcas"],
+    "expected_response_elements": ["licores", "2024", "lanzamientos", "innovación"]
+  },
+  {
+    "query": "¿Cuáles son los cócteles más populares en 2025 según los mejores bares del mundo?",
+    "expected_strategy": "dynamic_crawler",
+    "expected_keywords": ["cócteles", "populares", "2025", "ranking", "mejores", "bares", "mundo", "top"],
+    "expected_sections": ["ranking", "popularidad", "tendencias"],
+    "expected_response_elements": ["cócteles", "2025", "mejores bares", "ranking"]
+  }
+]

@@ -1,0 +1,72 @@
+[
+  {
+    "query": "¿Qué hace único al Paper Plane?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["bourbon", "amaro", "aperitivo", "limón", "sam ross", "cóctel", "historia"],
+    "expected_sections": ["descripción", "características", "historia"],
+    "expected_response_elements": ["bourbon", "amaro nonino", "sam ross"]
+  },
+  {
+    "query": "¿Cuál es la historia del Tequila?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["tequila", "mexico", "azteca", "agave", "pulque", "origen", "historia"],
+    "expected_sections": ["historia", "origen", "desarrollo"],
+    "expected_response_elements": ["aztecas", "agave", "mezcal", "destilación"]
+  },
+  {
+    "query": "¿Cuál es la historia de la Coca-Cola?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["coca-cola", "pemberton", "farmacia", "soda", "atlanta", "historia", "origen"],
+    "expected_sections": ["historia", "origen", "evolución"],
+    "expected_response_elements": ["pemberton", "atlanta", "coca", "farmacia"]
+  },
+  {
+    "query": "¿Qué hace especial al Old Fashioned según la receta de Difford?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["old fashioned", "difford", "bourbon", "rye", "whisky", "saline", "salino"],
+    "expected_sections": ["características", "sabor", "preparación"],
+    "expected_response_elements": ["bourbon", "rye", "solución salina", "balance"]
+  },
+  {
+    "query": "¿Qué bitters se usan en el Old Fashioned y por qué?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["old fashioned", "bitters", "amargos", "bob's", "abbott's", "angostura", "sabor"],
+    "expected_sections": ["ingredientes", "propósito", "sabor"],
+    "expected_response_elements": ["bitters", "abbott's", "sabor", "balance"]
+  },
+  {
+    "query": "¿Cómo se compara el sabor del Negroni con otros cócteles amargos?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["negroni", "amargo", "bitter", "campari", "comparativa", "sabor", "equilibrio"],
+    "expected_sections": ["comparación", "sabor", "características"],
+    "expected_response_elements": ["campari", "amargo", "balance", "dulzor"]
+  },
+  {
+    "query": "¿Qué cócteles son similares al Penicillin?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["penicillin", "whisky", "similar", "miel", "jengibre", "limón", "alternativas"],
+    "expected_sections": ["similares", "variaciones", "alternativas"],
+    "expected_response_elements": ["whisky", "miel", "jengibre", "cócteles similares"]
+  },
+  {
+    "query": "¿En qué se diferencia el Bramble de otros cócteles con gin?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["bramble", "gin", "ginebra", "creme de mure", "mora", "diferencias", "características"],
+    "expected_sections": ["características", "diferencias", "sabor"],
+    "expected_response_elements": ["creme de mure", "mora", "hielo picado", "presentación"]
+  },
+  {
+    "query": "¿Qué sensaciones de sabor ofrece un Daiquiri bien preparado?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["daiquiri", "sabor", "ron", "lima", "balance", "sensación", "acidez", "dulzor"],
+    "expected_sections": ["sabor", "balance", "sensación"],
+    "expected_response_elements": ["acidez", "dulzor", "ron", "balance"]
+  },
+  {
+    "query": "¿Cómo evolucionó el Espresso Martini en la cultura de cócteles?",
+    "expected_strategy": "embedding",
+    "expected_keywords": ["espresso martini", "evolución", "tendencia", "café", "vodka", "historia", "popularidad"],
+    "expected_sections": ["evolución", "historia", "impacto"],
+    "expected_response_elements": ["evolución", "popularidad", "tendencia"]
+  }
+]
