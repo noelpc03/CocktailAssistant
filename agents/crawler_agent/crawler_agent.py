@@ -290,10 +290,85 @@ class CrawlerAgent(Agent):
         
         return None
     
+    async def process_url(self, url: str, depth: int, anchor_text: str, visited_urls: set, min_relevance: float) -> Dict[str, Any]:
+        """
+        Process a single URL: fetch, analyze, and extract links.
+        
+        Args:
+            url: URL to process
+            depth: Current depth level
+            anchor_text: Anchor text of the link
+            visited_urls: Set of already visited URLs
+            min_relevance: Minimum relevance threshold
+            
+        Returns:
+            Dictionary with processing results
+        """
+        # Default relevance until content is analyzed
+        relevance = self.ant_colony.calculate_heuristic(url, anchor_text)
+        result = {
+            "url": url,
+            "depth": depth,
+            "success": False,
+            "document": None,
+            "links": [],
+            "relevance": relevance
+        }
+            
+        try:
+            logger.info(f"Crawling URL: {url} (depth: {depth}, relevance: {relevance:.2f})")
+            
+            # Apply rate limiting
+            await self._respect_rate_limits(url)
+            
+            content = await self._fetch_page(url)
+            
+            if not content:
+                logger.warning(f"Failed to extract content from {url}")
+                return result
+                
+            # Process current page content
+            title = self._extract_title(content)
+            clean_content = self._clean_content(content)
+            
+            # Calculate content relevance
+            content_relevance = self._calculate_content_relevance(title, clean_content)
+            
+            # Update the relevance variable with the actual content relevance
+            relevance = content_relevance
+            
+            doc = {
+                "url": url,
+                "title": title,
+                "content": clean_content,
+                "depth": depth,
+                "relevance": content_relevance,
+                "source": "web_crawl",
+                "timestamp": time.time()
+            }
+            
+            # Check if document has sufficient relevance
+            if content_relevance >= min_relevance:
+                result["document"] = doc
+                logger.info(f"Successfully crawled {url} (relevance: {content_relevance:.2f})")
+            
+            # Extract links with anchor text for better relevance assessment
+            if depth < self.config.get("max_depth", 2):
+                result["links"] = self._extract_links_with_anchor(content, url)
+            
+            result["success"] = True
+            result["relevance"] = content_relevance
+            
+            return result
+                
+        except Exception as e:
+            logger.error(f"Error crawling {url}: {e}")
+            return result
+
     async def crawl_urls(self, seed_urls: List[str]) -> List[Dict[str, Any]]:
         """
-        Crawl websites using Ant Colony Optimization algorithm starting from seed URLs.
-        Stop only when maximum depth is reached.
+        Crawl websites using Ant Colony Optimization algorithm starting from seed URLs,
+        with concurrent URL processing.
         
         Args:
             seed_urls: Initial URLs to start crawling from
@@ -310,107 +385,123 @@ class CrawlerAgent(Agent):
         # Set maximum depth for BFS traversal
         max_depth = self.config.get("max_depth", 2)
         
+        # Get maximum number of documents to crawl
+        max_documents = self.config.get("max_documents", 2000)
+        
         # Default minimum relevance threshold 
         min_relevance = 0.2  # Can be adjusted based on requirements
         
-        logger.info(f"Starting Ant Colony Optimization crawl with {len(seed_urls)} seed URLs and max depth {max_depth}. " 
-                   f"Using {self.ant_colony.num_ants} ants for URL selection.")
+        # Set concurrency level (number of URLs to process in parallel)
+        concurrency = min(16, self.ant_colony.num_ants * 2)  # Use at most 16 concurrent tasks
+        
+        logger.info(f"Starting Parallel Ant Colony Optimization crawl with {len(seed_urls)} seed URLs and max depth {max_depth}. " 
+                   f"Using {self.ant_colony.num_ants} ants for selection and {concurrency} concurrent workers. "
+                   f"Document limit: {max_documents}")
         
         page_count = 0
         
-        while queue:
-            current_url, depth, anchor_text = queue.popleft()
+        while queue and len(documents) < max_documents:
+            # Phase 1: Select a batch of URLs to process concurrently
+            batch = []
+            batch_by_domain = defaultdict(int)
+            max_per_domain = max(2, concurrency // 4)  # Limit URLs per domain in each batch
             
-            # Skip if URL already visited
-            if current_url in visited_urls:
+            # Check if we're close to the document limit and adjust batch size if necessary
+            remaining_docs = max_documents - len(documents)
+            batch_size = min(concurrency, remaining_docs)
+            
+            while len(batch) < batch_size and queue:
+                # Get next URL from queue
+                if not queue:
+                    break
+                    
+                url, depth, anchor = queue.popleft()
+                
+                # Skip if already visited or beyond max depth
+                if url in visited_urls or depth > max_depth:
+                    continue
+                
+                # Apply domain diversity in batch selection
+                domain = urllib.parse.urlparse(url).netloc
+                if batch_by_domain[domain] >= max_per_domain:
+                    # Put back in queue for later processing
+                    queue.append((url, depth, anchor))
+                    continue
+                    
+                batch.append((url, depth, anchor))
+                batch_by_domain[domain] += 1
+                visited_urls.add(url)
+                page_count += 1
+            
+            if not batch:
                 continue
-                
-            # Check if we've reached max depth
-            if depth > max_depth:
-                logger.debug(f"Reached maximum depth {max_depth} for URL: {current_url}, skipping")
-                continue
             
-            visited_urls.add(current_url)
-            page_count += 1
+            # Log batch information
+            logger.info(f"Processing batch of {len(batch)} URLs, {sum(batch_by_domain.values())} domains")
+                
+            # Phase 2: Process URLs in parallel
+            tasks = []
+            for url, depth, anchor in batch:
+                task = self.process_url(url, depth, anchor, visited_urls, min_relevance)
+                tasks.append(task)
+                
+            # Wait for all tasks to complete
+            results = await asyncio.gather(*tasks, return_exceptions=False)
             
-            # Default relevance until content is analyzed
-            relevance = self.ant_colony.calculate_heuristic(current_url, anchor_text)
-                
-            try:
-                logger.info(f"Crawling URL: {current_url} (depth: {depth}, relevance: {relevance:.2f})")
-                
-                # Apply rate limiting
-                await self._respect_rate_limits(current_url)
-                
-                content = await self._fetch_page(current_url)
-                
-                if content:
-                    # Process current page content
-                    title = self._extract_title(content)
-                    clean_content = self._clean_content(content)
-                    
-                    # Calculate content relevance
-                    content_relevance = self._calculate_content_relevance(title, clean_content)
-                    
-                    # Update the relevance variable with the actual content relevance
-                    relevance = content_relevance
-                    
-                    doc = {
-                        "url": current_url,
-                        "title": title,
-                        "content": clean_content,
-                        "depth": depth,
-                        "relevance": content_relevance,
-                        "source": "web_crawl",
-                        "timestamp": time.time()
-                    }
-                    
-                    # Only keep documents with sufficient relevance
-                    if content_relevance >= min_relevance:
-                        documents.append(doc)
-                        logger.info(f"Successfully crawled {current_url} (relevance: {content_relevance:.2f})")
-                    
+            # Phase 3: Process results, update pheromones and extract new links (synchronized)
+            new_links_count = 0
+            
+            # First update pheromones for all successfully processed URLs
+            for result in results:
+                if result["success"]:
                     # Update pheromones based on content relevance
-                    self.ant_colony.update_pheromones(current_url, content_relevance)
+                    self.ant_colony.update_pheromones(result["url"], result["relevance"])
                     
-                    # Extract and enqueue links only if we're not at max depth yet
-                    if depth < max_depth:
-                        # Extract links with anchor text for better relevance assessment
-                        extracted_links = self._extract_links_with_anchor(content, current_url)
-                        
-                        # Use Ant Colony Optimization to select next URLs
-                        selected_links = self.ant_colony.select_next_urls(extracted_links, visited_urls)
-                        filtered_links = []
-                        
-                        # Process selected links
-                        domain_stats = defaultdict(int)
-                        for link_url, link_anchor in selected_links:
-                            if link_url not in visited_urls:
-                                # Calculate URL relevance
-                                heuristic = self.ant_colony.calculate_heuristic(link_url, link_anchor)
-                                
-                                # Track domain diversity
-                                domain = urllib.parse.urlparse(link_url).netloc
-                                domain_stats[domain] += 1
-                                
-                                # Add to queue with depth and anchor text
-                                queue.append((link_url, depth + 1, link_anchor))
-                                filtered_links.append(link_url)
-                        
-                        # Apply pheromone evaporation
-                        self.ant_colony.evaporate_pheromones()
-                        
-                        # Log domain diversity information
-                        logger.info(f"Domain diversity at depth {depth}: {dict(domain_stats)}")
-                        logger.info(f"Added {len(filtered_links)} new links from {current_url} (at depth {depth})")
-                else:
-                    logger.warning(f"Failed to extract content from {current_url}")
+                    # Add document to collection if relevant and we haven't reached the limit
+                    if result["document"] and len(documents) < max_documents:
+                        documents.append(result["document"])
                     
-            except Exception as e:
-                logger.error(f"Error crawling {current_url}: {e}")
+                    # Check if we've reached the document limit
+                    if len(documents) >= max_documents:
+                        logger.info(f"Document limit of {max_documents} reached. Stopping crawl process.")
+            
+            # Apply pheromone evaporation once per batch
+            self.ant_colony.evaporate_pheromones()
+            
+            # Then process extracted links for all URLs
+            for result in results:
+                if not result["success"] or not result["links"]:
+                    continue
+                    
+                # Use Ant Colony Optimization to select next URLs
+                selected_links = self.ant_colony.select_next_urls(result["links"], visited_urls)
+                
+                # Process selected links
+                domain_stats = defaultdict(int)
+                filtered_links = []
+                
+                for link_url, link_anchor in selected_links:
+                    if link_url not in visited_urls:
+                        # Track domain diversity
+                        domain = urllib.parse.urlparse(link_url).netloc
+                        domain_stats[domain] += 1
+                        
+                        # Add to queue with depth and anchor text
+                        queue.append((link_url, result["depth"] + 1, link_anchor))
+                        filtered_links.append(link_url)
+                
+                # Log domain diversity for this result
+                if filtered_links:
+                    logger.info(f"Domain diversity at depth {result['depth']}: {dict(domain_stats)}")
+                    logger.info(f"Added {len(filtered_links)} new links from {result['url']} (at depth {result['depth']})")
+                    new_links_count += len(filtered_links)
+            
+            logger.info(f"Batch completed: {len(documents)} total documents, {new_links_count} new links queued")
         
-        logger.info(f"BFS crawl completed. Visited {len(visited_urls)} URLs, extracted {len(documents)} documents")
-        logger.info(f"Processing stopped due to max depth limit ({max_depth})")
+        if len(documents) >= max_documents:
+            logger.info(f"Crawl reached document limit of {max_documents}. Crawling process stopped.")
+        
+        logger.info(f"Parallel crawl completed. Visited {page_count} URLs, extracted {len(documents)} documents")
         
         # Count documents by depth level to provide better insights
         depth_counts = {}
@@ -485,8 +576,8 @@ class CrawlerAgent(Agent):
                 if response.status_code == 200:
                     return response.text
                 elif response.status_code == 429:  # Too Many Requests
-                    retry_after = int(response.headers.get('Retry-After', 5))
-                    logger.warning(f"Rate limited for {url}: waiting {retry_after}s")
+                    retry_after = min(60, int(response.headers.get('Retry-After', 5)))  # Limitar a máximo 60 segundos
+                    logger.warning(f"Rate limited for {url}: waiting {retry_after}s (original: {response.headers.get('Retry-After', 5)}s)")
                     await asyncio.sleep(retry_after)
                     retries += 1
                     continue
