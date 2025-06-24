@@ -199,14 +199,36 @@ class CoordinatorAgent(Agent):
             # Update operation
             operation["results"] = results
             
+            # Check if we're expecting dynamic web results
+            needs_dynamic_crawling = operation.get("needs_dynamic_crawling", False)
+            has_web_info = operation.get("has_web_info", False)
+            web_info = operation.get("web_info", "")
+            
             # If LLM is requested, forward to generation agent
             if operation["use_llm"]:
-                await self.send_message("generation_agent", {
-                    "action": "generate_response",
-                    "query": query,
-                    "search_results": results,
-                    "operation_id": operation_id
-                })
+                # If we have web info already, include it
+                if has_web_info and web_info:
+                    logger.info(f"Including dynamic web info in generation request for query: '{query}'")
+                    await self.send_message("generation_agent", {
+                        "action": "generate_response",
+                        "query": query,
+                        "search_results": results,
+                        "web_info": web_info,
+                        "has_dynamic_info": True,
+                        "operation_id": operation_id
+                    })
+                # Otherwise, proceed with normal generation
+                else:
+                    # Log if we're waiting for web info but proceeding anyway
+                    if needs_dynamic_crawling and not has_web_info:
+                        logger.info(f"Proceeding with generation while waiting for dynamic web results for query: '{query}'")
+                    
+                    await self.send_message("generation_agent", {
+                        "action": "generate_response",
+                        "query": query,
+                        "search_results": results,
+                        "operation_id": operation_id
+                    })
                 return None
             else:
                 # Send a message indicating that LLM is required
@@ -432,6 +454,51 @@ class CoordinatorAgent(Agent):
                     }
                 }
         
+        elif action == "web_search_results":
+            # Results from dynamic crawler agent
+            query = content.get("query", "")
+            web_info = content.get("web_info", "")
+            operation_id = content.get("operation_id", "")
+            source = content.get("source", "unknown")
+            
+            logger.info(f"Received web search results for query '{query}' (operation_id: {operation_id}, source: {source})")
+            
+            if not operation_id or operation_id not in self.active_operations:
+                logger.warning(f"Unknown operation ID in web_search_results: {operation_id}")
+                return None
+            
+            # Store the web_info in the operation for later use
+            self.active_operations[operation_id]["web_info"] = web_info
+            self.active_operations[operation_id]["has_web_info"] = True
+            
+            # If this was triggered by the strategy agent (source='strategy')
+            # and we're still waiting for other processing, just store the results
+            if source == "strategy":
+                logger.info(f"Storing dynamic web results for later use in operation: {operation_id}")
+                return None
+                
+            # If we already have search results and are waiting for web info to enhance
+            if "results" in self.active_operations[operation_id] and self.active_operations[operation_id]["results"]:
+                search_results = self.active_operations[operation_id]["results"]
+                
+                # Combine search results with web_info for a better response
+                if self.active_operations[operation_id].get("use_llm", True):
+                    # Append web info to search results for generation
+                    logger.info(f"Enhancing search results with web information for query: '{query}'")
+                    
+                    # Send to generation agent with both search results and web info
+                    await self.send_message("generation_agent", {
+                        "action": "generate_response",
+                        "query": query,
+                        "search_results": search_results,
+                        "web_info": web_info,
+                        "has_dynamic_info": True,
+                        "operation_id": operation_id
+                    })
+                
+            # No immediate response
+            return None
+
         return None
     
     async def start_crawl_and_index(self, urls: List[str] = None) -> bool:

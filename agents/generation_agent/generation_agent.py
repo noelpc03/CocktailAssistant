@@ -290,6 +290,88 @@ Información de referencia:
         
         return prompt
     
+    def _build_combined_prompt(self, query: str, search_results: List[Dict[str, Any]], web_info: str) -> str:
+        """
+        Build a prompt that combines embedding search results with dynamic web search information.
+        
+        Args:
+            query: User query
+            search_results: Search results from embedding search
+            web_info: Information retrieved from dynamic web search
+            
+        Returns:
+            Complete prompt for the model
+        """
+        # Start with the main instruction
+        initial_part = f"""
+Eres un asistente experto en cócteles que genera respuestas basadas en información proporcionada.
+
+Tu tarea es responder a la consulta del usuario utilizando la información proporcionada.
+- Responde SOLO usando la información proporcionada en las fuentes
+- Si la información proporcionada no es suficiente, indícalo claramente
+- Prioriza la información de la web más reciente cuando esté disponible, especialmente para consultas sobre tendencias o información actual
+- Combina la información de ambas fuentes de manera coherente
+- Da formato a tu respuesta con subtítulos y listas cuando sea apropiado
+- NO menciones las fuentes explícitamente en tu respuesta
+- Responde SIEMPRE en español
+- NO inventes información que no esté en las fuentes proporcionadas
+
+CONSULTA DEL USUARIO:
+{query}
+
+INFORMACIÓN DE BÚSQUEDA LOCAL (BASE DE CONOCIMIENTO):
+"""
+
+        # Add up to 10 most relevant search results
+        used_sources = []
+        for i, result in enumerate(search_results[:10]):
+            content = result.get("content", "").strip()
+            if not content:
+                continue
+                
+            used_sources.append(f"Fuente {i+1}:\n{content}\n\n")
+
+        # Add web information section
+        web_section = """
+INFORMACIÓN DE BÚSQUEDA EN TIEMPO REAL (WEB):
+"""
+        if web_info and web_info.strip():
+            web_section += web_info
+        else:
+            web_section += "No se encontró información web adicional relevante."
+        
+        # Construct final part
+        final_part = """
+
+Responde a la consulta del usuario utilizando la información proporcionada. 
+Si la información de la web es más reciente y relevante, priorízala. 
+Integra ambas fuentes para dar una respuesta completa y actualizada.
+"""
+        
+        # Build the complete prompt
+        prompt = initial_part
+        
+        # Add the sources that could be included
+        for source in used_sources:
+            prompt += source
+            
+        # Add web information section
+        prompt += web_section
+        
+        # Add final part
+        prompt += final_part
+        
+        logger.info(f"Prompt combinado construido con {len(used_sources)} documentos y web info")
+        logger.info(f"Tamaño del prompt combinado: {len(prompt)} caracteres")
+        
+        # Limit prompt size
+        max_prompt_length = 8000  # A conservative limit
+        if len(prompt) > max_prompt_length:
+            logger.warning(f"El prompt excede el tamaño máximo. Truncando de {len(prompt)} a {max_prompt_length} caracteres")
+            prompt = prompt[:max_prompt_length]
+        
+        return prompt
+    
     async def generate_response(self, query: str, search_results: List[Dict[str, Any]], api_key_path: str = None) -> str:
         """
         Generate a response using the LLM with Mistral AI API.

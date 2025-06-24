@@ -32,14 +32,17 @@ async def verify_and_enhance_response(self, query: str, response: str, operation
         if not web_info:
             logger.info(f"No web information available yet for query: '{query}'. Checking response quality.")
             
+            # Check if the operation requires web info (dynamic crawling)
+            needs_dynamic_crawling = operation.get("needs_dynamic_crawling", False)
+            
             # Check if response is empty or has errors
             is_empty_response = not response or response.strip() == "" or "No se encontraron resultados" in response
             has_error_message = "error" in response.lower() or "falló" in response.lower() or "no está disponible" in response.lower()
             
-            # If the response has issues, we should try to get web info
-            if is_empty_response or has_error_message:
-                reason = "Empty response" if is_empty_response else "Error message detected"
-                logger.info(f"Response verified as INADEQUATE for query: '{query}'. Reason: {reason}")
+            # If the response has issues or we know we need web info, get it
+            if is_empty_response or has_error_message or needs_dynamic_crawling:
+                reason = "Empty response" if is_empty_response else ("Error message detected" if has_error_message else "Dynamic crawling required")
+                logger.info(f"Response needs enhancement for query: '{query}'. Reason: {reason}")
                 logger.info(f"Searching the web for additional information...")
                 
                 try:

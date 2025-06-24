@@ -65,7 +65,7 @@
   },
   "retrieval_agent": {
     "max_results": 20,
-    "similarity_threshold": 0.2
+    "similarity_threshold": 0.5
   },
   "search_agent": {
     "max_results": 20,
