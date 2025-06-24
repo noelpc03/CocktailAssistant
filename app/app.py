@@ -167,26 +167,50 @@ st.markdown("""
     
     /* Contenedor y formato de respuestas */
     .result-area {
-        margin-top: 1rem;
+        margin-top: 1.5rem;
         width: 100%;
         background: transparent;
+        padding: 0 0.5rem;
     }
     
+    /* Mantemos la clase por si se quiere usar en el futuro, pero ya no se usa activamente */
     .response-container {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9f2ff 100%);
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        border-left: 4px solid #1E88E5;
-        margin-top: 1rem;
-        padding: 1.2rem;
-        width: 100%;
+        display: none; /* Ocultamos este contenedor ya que no lo estamos usando */
     }
     
+    /* Estilos para el texto y elementos markdown para respuestas */
+    .result-area p {
+        font-size: 16px;
+        line-height: 1.4;
+        color: #333;
+        text-align: left;
+        margin-bottom: 0.8rem;
+    }
+    
+    .result-area ul, .result-area ol {
+        padding-left: 1.5rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    .result-area li {
+        margin-bottom: 0.4rem;
+    }
+    
+    .result-area strong {
+        font-weight: 600;
+    }
+    
+    /* Ya no necesitamos esta clase, pero la dejamos por si acaso */
     .answer-text {
         font-size: 16px;
         line-height: 1.4;
         color: #333;
         text-align: left;
+    }
+    
+    /* Aplicar estilo directamente a los elementos markdown en result-area */
+    .result-area .stMarkdown {
+        background-color: transparent !important;
     }
     
     /* Eliminar fondos y bordes extras de Streamlit */
@@ -216,6 +240,13 @@ st.markdown("""
     /* Remover el espacio alrededor del markdown */
     .css-1544g2n.e1fqkh3o4 {
         padding: 0 !important;
+    }
+    
+    /* Mejorar la apariencia de las respuestas */
+    .result-area .stMarkdown {
+        border-left: 3px solid #1E88E5;
+        padding-left: 1rem !important;
+        margin-top: 1rem !important;
     }
     
     /* Historial de búsquedas */
@@ -313,10 +344,19 @@ def extract_relevant_response(output):
                 else:
                     clean_response = response_with_extra
                 
-                # Eliminar líneas de guiones
-                clean_response = '\n'.join([line for line in clean_response.split('\n') 
-                                          if not line.strip().startswith('-') and 
-                                             not line.strip() == ''])
+                # Conservar líneas en blanco necesarias para el formato Markdown
+                # Solo eliminar líneas de guiones separadores, pero mantener guiones que sean parte de listas
+                clean_response_lines = []
+                lines = clean_response.split('\n')
+                
+                for i, line in enumerate(lines):
+                    # Eliminar líneas que son solo guiones repetidos (separadores)
+                    if line.strip() and all(c == '-' for c in line.strip()):
+                        continue
+                    # Mantener el resto de líneas, incluso líneas en blanco
+                    clean_response_lines.append(line)
+                
+                clean_response = '\n'.join(clean_response_lines)
                 
                 return clean_response.strip()
         
@@ -403,14 +443,8 @@ if (search_button or enter_pressed) and query:
             # Procesar la salida para extraer solo la respuesta relevante
             clean_response = extract_relevant_response(result)
             
-            # Mostrar la respuesta con un formato más compacto y limpio
-            st.markdown(f'''
-                <div class="response-container">
-                    <div class="answer-text">
-                        {clean_response}
-                    </div>
-                </div>
-            ''', unsafe_allow_html=True)
+            # Mostrar la respuesta directamente sin contenedor adicional
+            st.markdown(clean_response)
         else:
             project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             st.error(f"""No se pudieron obtener resultados. Posibles soluciones:
