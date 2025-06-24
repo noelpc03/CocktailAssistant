@@ -19,7 +19,7 @@
       "https://www.liquor.com/slideshows/history-of-cocktails/",
       "https://punchdrink.com/articles/tagged/history/"
     ],
-    "max_depth": 5,
+    "max_depth": 1,
     "ant_colony": {
       "num_ants": 16,
       "alpha": 0.9,

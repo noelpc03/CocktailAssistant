@@ -19,8 +19,8 @@ async def handle_ontology_results(self, content, message):
     """
     try:
         # Log the entire content for debugging
-        logger.info(f"Received ontology results: {json.dumps(content, default=str)[:500]}...")
-        print(f"\n{'%'*100}\n[DEBUG-HANDLE] PROCESSING ONTOLOGY RESULTS\n{'%'*100}", flush=True)
+        logger.info(f"Received ontology results with action={content.get('action')}: {json.dumps(content, default=str)[:500]}...")
+        print(f"\n{'%'*100}\n[DEBUG-HANDLE] PROCESSING ONTOLOGY RESULTS (action={content.get('action')})\n{'%'*100}", flush=True)
         
         query = content.get("query", "")
         results = content.get("results", [])

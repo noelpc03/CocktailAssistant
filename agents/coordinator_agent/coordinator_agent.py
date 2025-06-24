@@ -371,10 +371,10 @@ class CoordinatorAgent(Agent):
                 }
             }
             
-        elif action == "ontology_results":
+        elif action == "ontology_results" or action == "query_results":
             # Handle the results from ontology agent
-            # Using a dedicated method for better organization
-            return await self._handle_ontology_results(content, message)
+            # Using dedicated imported function for better organization
+            return await handle_ontology_results(self, content, message)
             
             if not operation:
                 # No matching operation found
